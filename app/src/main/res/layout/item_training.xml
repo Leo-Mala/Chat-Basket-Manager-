@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="@dimen/padding_medium"
+    android:background="@color/cardBackground"
+    android:layout_margin="@dimen/padding_small">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/playerNameTraining"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="Nome"
+            android:textColor="@color/textPrimary"
+            android:textSize="@dimen/text_size_body"/>
+
+        <TextView
+            android:id="@+id/playerOverallTraining"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="OVR: 80"
+            android:textColor="@color/colorPrimary"
+            android:textSize="@dimen/text_size_body"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="@dimen/padding_small">
+
+        <Button
+            android:id="@+id/trainShooting"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="AR: 80"
+            android:backgroundTint="@color/colorPrimary"
+            android:textColor="@color/textPrimary"
+            android:textSize="10sp"
+            android:layout_marginEnd="@dimen/padding_small"/>
+
+        <Button
+            android:id="@+id/trainDefense"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="DEF: 80"
+            android:backgroundTint="@color/colorPrimary"
+            android:textColor="@color/textPrimary"
+            android:textSize="10sp"
+            android:layout_marginEnd="@dimen/padding_small"/>
+
+        <Button
+            android:id="@+id/trainRebound"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="REB: 80"
+            android:backgroundTint="@color/colorPrimary"
+            android:textColor="@color/textPrimary"
+            android:textSize="10sp"
+            android:layout_marginEnd="@dimen/padding_small"/>
+
+        <Button
+            android:id="@+id/trainPassing"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="PAS: 80"
+            android:backgroundTint="@color/colorPrimary"
+            android:textColor="@color/textPrimary"
+            android:textSize="10sp"
+            android:layout_marginEnd="@dimen/padding_small"/>
+
+        <Button
+            android:id="@+id/trainAthleticism"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="ATL: 80"
+            android:backgroundTint="@color/colorPrimary"
+            android:textColor="@color/textPrimary"
+            android:textSize="10sp"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/xpText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="XP: 0"
+        android:textColor="@color/textSecondary"
+        android:textSize="12sp"
+        android:layout_marginTop="@dimen/padding_small"/>
+</LinearLayout>

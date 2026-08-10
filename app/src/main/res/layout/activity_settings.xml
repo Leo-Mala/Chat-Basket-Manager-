@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/backgroundDark">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/padding_medium">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⚙️ Configurações"
+            android:textSize="@dimen/text_size_title"
+            android:textColor="@color/colorPrimary"
+            android:gravity="center"
+            android:layout_marginBottom="@dimen/padding_large"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Dificuldade"
+            android:textColor="@color/textPrimary"
+            android:textSize="@dimen/text_size_subtitle"
+            android:layout_marginBottom="@dimen/padding_small"/>
+
+        <RadioGroup
+            android:id="@+id/difficultyGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="@dimen/padding_medium">
+
+            <RadioButton
+                android:id="@+id/difficultyEasy"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:text="Fácil"
+                android:textColor="@color/textPrimary"/>
+            <RadioButton
+                android:id="@+id/difficultyNormal"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:text="Normal"
+                android:textColor="@color/textPrimary"/>
+            <RadioButton
+                android:id="@+id/difficultyHard"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:text="Difícil"
+                android:textColor="@color/textPrimary"/>
+        </RadioGroup>
+
+        <CheckBox
+            android:id="@+id/checkInjuries"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Lesões ativadas"
+            android:textColor="@color/textPrimary"
+            android:layout_marginBottom="@dimen/padding_medium"/>
+
+        <Button
+            android:id="@+id/saveSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Salvar"
+            android:backgroundTint="@color/colorPrimary"
+            android:textColor="@color/textPrimary"
+            android:layout_marginBottom="@dimen/padding_small"/>
+
+        <Button
+            android:id="@+id/exportButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📤 Exportar Dados"
+            android:backgroundTint="@color/cardBackground"
+            android:textColor="@color/textPrimary"
+            android:layout_marginBottom="@dimen/padding_small"/>
+
+        <Button
+            android:id="@+id/importButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📥 Importar Dados"
+            android:backgroundTint="@color/cardBackground"
+            android:textColor="@color/textPrimary"
+            android:layout_marginBottom="@dimen/padding_small"/>
+
+        <Button
+            android:id="@+id/resetButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🔄 Resetar Todos os Dados"
+            android:backgroundTint="#D32F2F"
+            android:textColor="@color/textPrimary"/>
+    </LinearLayout>
+</ScrollView>

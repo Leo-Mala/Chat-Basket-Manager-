@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/backgroundDark">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/padding_medium">
+
+        <ImageView
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:src="@drawable/ic_basketball"
+            android:layout_gravity="center"
+            android:layout_marginBottom="@dimen/padding_small"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textSize="@dimen/text_size_title"
+            android:textColor="@color/colorPrimary"
+            android:gravity="center"
+            android:layout_marginBottom="@dimen/padding_medium"/>
+
+        <TextView
+            android:id="@+id/teamNameText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/team_name"
+            android:textSize="@dimen/text_size_subtitle"
+            android:textColor="@color/textPrimary"
+            android:gravity="center"
+            android:layout_marginBottom="@dimen/padding_small"/>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/playerRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="300dp"
+            android:layout_marginBottom="@dimen/padding_medium"/>
+
+        <!-- Linha 1 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="@dimen/padding_small">
+
+            <Button
+                android:id="@+id/simulateButton"
+                style="@style/MainButton"
+                android:text="@string/simulate"
+                android:backgroundTint="@color/colorPrimary" />
+
+            <Button
+                android:id="@+id/statsButton"
+                style="@style/MainButton"
+                android:text="@string/stats" />
+
+            <Button
+                android:id="@+id/careerButton"
+                style="@style/MainButton"
+                android:text="Carreira" />
+        </LinearLayout>
+
+        <!-- Linha 2 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="@dimen/padding_small">
+
+            <Button
+                android:id="@+id/lineupButton"
+                style="@style/MainButton"
+                android:text="Escalação" />
+
+            <Button
+                android:id="@+id/trainingButton"
+                style="@style/MainButton"
+                android:text="Treinos" />
+
+            <Button
+                android:id="@+id/tradeButton"
+                style="@style/MainButton"
+                android:text="Trocas" />
+        </LinearLayout>
+
+        <!-- Linha 3 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="@dimen/padding_small">
+
+            <Button
+                android:id="@+id/chartsButton"
+                style="@style/MainButton"
+                android:text="📊 Gráficos" />
+
+            <Button
+                android:id="@+id/coachButton"
+                style="@style/MainButton"
+                android:text="🧑‍🏫 Treinador" />
+
+            <Button
+                android:id="@+id/financeButton"
+                style="@style/MainButton"
+                android:text="💰 Finanças" />
+        </LinearLayout>
+
+        <!-- Linha 4 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="@dimen/padding_small">
+
+            <Button
+                android:id="@+id/tacticsButton"
+                style="@style/MainButton"
+                android:text="📋 Táticas" />
+
+            <Button
+                android:id="@+id/compareButton"
+                style="@style/MainButton"
+                android:text="⚖️ Comparar" />
+
+            <Button
+                android:id="@+id/rankingButton"
+                style="@style/MainButton"
+                android:text="🏀 Ranking" />
+        </LinearLayout>
+
+        <!-- Linha 5 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="@dimen/padding_small">
+
+            <Button
+                android:id="@+id/awardsButton"
+                style="@style/MainButton"
+                android:text="🏅 Prêmios" />
+
+            <Button
+                android:id="@+id/historyButton"
+                style="@style/MainButton"
+                android:text="📜 Histórico" />
+
+            <Button
+                android:id="@+id/settingsButton"
+                style="@style/MainButton"
+                android:text="⚙️ Configurações" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,36 @@
+name: Security Audit
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Scan repository for private keys and common API-key patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -n -I -E '-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----' -- . ':!*.md'; then
+            echo "Private key material detected."
+            exit 1
+          fi
+          if git grep -n -I -E 'AIza[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}' -- . ':!*.md'; then
+            echo "Possible cloud API credential detected."
+            exit 1
+          fi
+          if find . -type f \( -name '*.jks' -o -name '*.keystore' -o -name '*.p12' \) -print -quit | grep -q .; then
+            echo "Keystore file detected in repository."
+            exit 1
+          fi
+          echo "Secret scan passed."

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="@dimen/padding_medium"
+    android:background="@color/backgroundDark">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="💰 Finanças"
+        android:textSize="@dimen/text_size_title"
+        android:textColor="@color/colorPrimary"
+        android:gravity="center"
+        android:layout_marginBottom="@dimen/padding_medium"/>
+
+    <TextView
+        android:id="@+id/budgetText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Orçamento: $0"
+        android:textColor="@color/textPrimary"
+        android:textSize="@dimen/text_size_subtitle"
+        android:gravity="center"
+        android:layout_marginBottom="@dimen/padding_medium"/>
+
+    <Button
+        android:id="@+id/negotiateSponsorButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Negociar Patrocínio"
+        android:backgroundTint="@color/colorPrimary"
+        android:textColor="@color/textPrimary"/>
+</LinearLayout>

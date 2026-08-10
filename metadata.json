@@ -1,0 +1,6 @@
+{
+  "name": "Basket Manager",
+  "description": "Um completo e imersivo jogo manager de basquete estilo NBA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="@dimen/padding_medium"
+    android:background="@color/cardBackground"
+    android:layout_margin="@dimen/padding_small">
+
+    <TextView
+        android:id="@+id/seasonText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Temporada 1"
+        android:textColor="@color/colorPrimary"
+        android:textSize="@dimen/text_size_subtitle"/>
+
+    <TextView
+        android:id="@+id/championText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🏆 Lakers"
+        android:textColor="@color/textPrimary"
+        android:textSize="@dimen/text_size_body"/>
+
+    <TextView
+        android:id="@+id/detailsText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="MVP: LeBron | Cestinha: 30 pts"
+        android:textColor="@color/textSecondary"
+        android:textSize="@dimen/text_size_body"/>
+</LinearLayout>

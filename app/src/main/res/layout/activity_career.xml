@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/backgroundDark">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/padding_medium">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🏆 Modo Carreira"
+            android:textSize="@dimen/text_size_title"
+            android:textColor="@color/colorPrimary"
+            android:gravity="center"
+            android:layout_marginBottom="@dimen/padding_medium"/>
+
+        <TextView
+            android:id="@+id/standingsText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Carregando..."
+            android:textColor="@color/textPrimary"
+            android:gravity="center"
+            android:layout_marginBottom="@dimen/padding_small"/>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/standingsRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="400dp"
+            android:layout_marginBottom="@dimen/padding_medium"/>
+
+        <Button
+            android:id="@+id/simulateGameButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Simular 1 Jogo"
+            android:backgroundTint="@color/colorPrimary"
+            android:textColor="@color/textPrimary"
+            android:layout_marginBottom="@dimen/padding_small"/>
+
+        <Button
+            android:id="@+id/simulateDayButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Simular Rodada"
+            android:backgroundTint="@color/cardBackground"
+            android:textColor="@color/textPrimary"
+            android:layout_marginBottom="@dimen/padding_small"/>
+
+        <Button
+            android:id="@+id/simulateAllButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⏩ Simular Temporada Inteira"
+            android:backgroundTint="@color/colorAccent"
+            android:textColor="@color/textPrimary"
+            android:layout_marginBottom="@dimen/padding_small"/>
+
+        <Button
+            android:id="@+id/playoffsButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🏆 Iniciar Playoffs"
+            android:backgroundTint="@color/colorAccent"
+            android:textColor="@color/textPrimary"/>
+
+    </LinearLayout>
+</ScrollView>

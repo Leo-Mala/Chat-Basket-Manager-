@@ -1,0 +1,180 @@
+package com.example.ui
+
+import com.example.*
+
+import android.Manifest
+import android.content.Context
+import android.os.Build
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import com.example.data.NbaDataGenerator
+import com.example.domain.finance.FinanceManager
+import com.example.domain.roster.RosterManager
+import com.example.domain.season.SeasonManager
+import com.example.domain.trade.TradeManager
+import com.example.domain.draft.DraftManager
+import com.example.domain.playoff.PlayoffManager
+import com.example.models.*
+import com.example.simulator.GameSimulator
+import com.example.ui.theme.*
+import com.example.utils.AwardsCalculator
+import com.example.utils.AutoSaveManager
+import com.example.utils.ToastUtils
+import com.example.utils.CoachFeedbackGenerator
+import com.example.ui.screens.MainMenuScreen
+import com.example.ui.screens.StatsTab
+import com.example.ui.screens.NotificationsTab
+import com.example.ui.components.GameButton
+import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.random.Random
+
+
+@Composable
+
+fun BasketManagerGameApp() {
+    val context = LocalContext.current
+    val viewModel: GameViewModel = viewModel(factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            @Suppress("UNCHECKED_CAST")
+            return GameViewModel(context.applicationContext as android.app.Application) as T
+        }
+    })
+
+    var showMainMenu by remember { mutableStateOf(true) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
+    androidx.activity.compose.BackHandler(enabled = !showMainMenu) {
+        showMainMenu = true
+    }
+
+    AnimatedContent(
+        targetState = showMainMenu,
+        transitionSpec = {
+            if (targetState) {
+                (fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.96f, animationSpec = tween(300)))
+                    .togetherWith(fadeOut(animationSpec = tween(220)) + scaleOut(targetScale = 1.04f, animationSpec = tween(220)))
+            } else {
+                (fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 1.04f, animationSpec = tween(300)))
+                    .togetherWith(fadeOut(animationSpec = tween(220)) + scaleOut(targetScale = 0.96f, animationSpec = tween(220)))
+            }
+        },
+        label = "MainMenuToGameTransition"
+    ) { isMainMenu ->
+        if (isMainMenu) {
+            val hasSavedGame = viewModel.managedTeam != null
+            val teamName = viewModel.managedTeam?.name ?: ""
+            val budget = viewModel.finances?.budget ?: 0
+            val wins = viewModel.season?.standings?.get(teamName)?.wins ?: 0
+            val losses = viewModel.season?.standings?.get(teamName)?.losses ?: 0
+
+            MainMenuScreen(
+                onContinue = {
+                    showMainMenu = false
+                },
+                onNewCareer = {
+                    viewModel.clearSavedGame(context)
+                    showMainMenu = false
+                },
+                onSettings = {
+                    showSettingsDialog = true
+                },
+                hasSavedGame = hasSavedGame,
+                teamName = teamName,
+                budget = budget,
+                wins = wins,
+                losses = losses
+            )
+
+            if (showSettingsDialog) {
+                SettingsDialog(
+                    viewModel = viewModel,
+                    onExitToMainMenu = null,
+                    onDismiss = { showSettingsDialog = false }
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.background,
+                                MaterialTheme.colorScheme.surface,
+                                MaterialTheme.colorScheme.background
+                            )
+                        )
+                    )
+            ) {
+                AnimatedContent(
+                    modifier = Modifier.fillMaxSize(),
+                    targetState = viewModel.gameState,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(280)) + slideInVertically(animationSpec = tween(280)) { height -> height / 12 })
+                        .togetherWith(fadeOut(animationSpec = tween(200)) + slideOutVertically(animationSpec = tween(200)) { height -> -height / 12 })
+                },
+                label = "GameStateTransition"
+            ) { state ->
+                when (state) {
+                    GameState.SETUP -> SetupScreen(viewModel)
+                    GameState.ACTIVE -> ActiveManagerScreen(viewModel = viewModel, onExitToMainMenu = { showMainMenu = true })
+                    GameState.PLAYOFFS -> PlayoffScreen(viewModel)
+                    GameState.CHAMPIONSHIP_CELEBRATION -> CelebrationScreen(viewModel)
+                    GameState.DRAFT -> DraftScreen(viewModel)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable

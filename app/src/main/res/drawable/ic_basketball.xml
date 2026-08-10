@@ -1,0 +1,52 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+
+    <!-- Outer Gold Glow Ring -->
+    <path
+        android:fillColor="#FFB800"
+        android:pathData="M50,2 C76.51,2 98,23.49 98,50 C98,76.51 76.51,98 50,98 C23.49,98 2,76.51 2,50 C2,23.49 23.49,2 50,2 Z" />
+
+    <!-- Main Ball Base -->
+    <path
+        android:fillColor="#FF5500"
+        android:pathData="M50,5 C74.85,5 95,25.15 95,50 C95,74.85 74.85,95 50,95 C25.15,95 5,74.85 5,50 C5,25.15 25.15,5 50,5 Z" />
+
+    <!-- Top Highlight Crescent -->
+    <path
+        android:fillColor="#FF8833"
+        android:pathData="M50,5 C70,5 87,19 93,38 C84,28 70,22 50,22 C30,22 16,28 7,38 C13,19 30,5 50,5 Z" />
+
+    <!-- Basketball Seam Lines -->
+    <!-- Vertical Seam -->
+    <path
+        android:strokeColor="#1E293B"
+        android:strokeWidth="3.5"
+        android:pathData="M50,5 L50,95" />
+
+    <!-- Horizontal Seam -->
+    <path
+        android:strokeColor="#1E293B"
+        android:strokeWidth="3.5"
+        android:pathData="M5,50 L95,50" />
+
+    <!-- Left Arc Seam -->
+    <path
+        android:strokeColor="#1E293B"
+        android:strokeWidth="3.5"
+        android:pathData="M23,12 C38,30 38,70 23,88" />
+
+    <!-- Right Arc Seam -->
+    <path
+        android:strokeColor="#1E293B"
+        android:strokeWidth="3.5"
+        android:pathData="M77,12 C62,30 62,70 77,88" />
+
+    <!-- Outer Rim Accent -->
+    <path
+        android:strokeColor="#0F172A"
+        android:strokeWidth="2.5"
+        android:pathData="M50,5 C74.85,5 95,25.15 95,50 C95,74.85 74.85,95 50,95 C25.15,95 5,74.85 5,50 C5,25.15 25.15,5 50,5 Z" />
+</vector>

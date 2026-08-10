@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="@dimen/padding_medium"
+    android:background="@color/backgroundDark">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🔄 Trocas"
+        android:textSize="@dimen/text_size_title"
+        android:textColor="@color/colorPrimary"
+        android:gravity="center"
+        android:layout_marginBottom="@dimen/padding_medium"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Selecione um jogador do seu time para trocar"
+        android:textColor="@color/textSecondary"
+        android:gravity="center"
+        android:layout_marginBottom="@dimen/padding_medium"/>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/tradeRecyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"/>
+
+    <TextView
+        android:id="@+id/tradeResultText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="@color/textPrimary"
+        android:gravity="center"
+        android:layout_marginTop="@dimen/padding_medium"/>
+</LinearLayout>

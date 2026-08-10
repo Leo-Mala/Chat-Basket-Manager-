@@ -1,0 +1,56 @@
+# Basket Manager
+
+Projeto Android/Kotlin de gerenciamento de basquete, baseado em Jetpack Compose, Room e Kotlin Coroutines.
+
+## Requisitos
+
+- Android Studio recente
+- JDK 17
+- Android SDK Platform 36 (com ferramentas de build compatíveis)
+- Gradle compatível com AGP 9.1.1 (o projeto está preparado para Gradle 9.3.x)
+
+## Abrir e compilar
+
+1. Abra a pasta do projeto no Android Studio.
+2. Aguarde a sincronização do Gradle.
+3. Instale o Android SDK solicitado pelo IDE caso seja necessário.
+4. Execute `assembleDebug` para gerar uma versão de debug.
+5. Para release, execute `assembleRelease`; a versão release é propositalmente sem assinatura, então configure uma chave de assinatura no ambiente de desenvolvimento/CI.
+
+## Comandos
+
+```bash
+./gradlew assembleDebug
+./gradlew test
+./gradlew assembleRelease
+```
+
+> O pacote entregue nesta auditoria não contém uma chave privada de assinatura. Isso é intencional.
+
+## Persistência
+
+O núcleo da carreira utiliza Room/SQLite, com migrações reais 1→2→3→4→5 e testes de migração. O diretório `app/schemas/` é usado para versionamento dos schemas Room.
+
+## Simulação
+
+O motor de simulação possui testes de invariantes e stress tests. O núcleo estatístico é mantido separado do Android sempre que possível.
+
+## Observação sobre a validação desta entrega
+
+A suíte foi ampliada com testes de integridade, ciclo de carreira, contratos, IDs, stress/performance e migrações reais. A compilação Android completa (`assembleDebug`/`assembleRelease`/`bundleRelease`) deve ser executada no GitHub Actions ou em Android Studio, pois este pacote não contém o Android SDK nem uma chave de assinatura.
+
+## GitHub Actions
+
+O projeto inclui workflows em `.github/workflows/` para executar testes, `assembleDebug`, `assembleRelease` e lint automaticamente no GitHub Actions. Consulte `GITHUB_BUILD.md`.
+
+## Release Candidate
+
+Version `2.0.0-rc1` is the Release Candidate baseline for the post-audit stages 18–20.
+The UI uses Material 3 semantic colors, adaptive light/dark mode, consistent typography,
+rounded surfaces and elevated cards.
+
+CI performs unit tests, lint, debug/release builds, AAB generation, instrumented tests,
+artifact checks and a repository secret scan. Release signing is optional and is driven
+only by GitHub Actions secrets; no private signing material is committed.
+
+The authoritative final audit is documented in `FINAL_AUDIT_18_20.md`.

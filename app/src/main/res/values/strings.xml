@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Basket Manager</string>
+    <string name="team_name">Meu Time</string>
+    <string name="simulate">Simular Partida</string>
+    <string name="stats">Estatísticas</string>
+    <string name="result_title">Resultado</string>
+    <string name="top_scorer">Cestinha</string>
+    <string name="win">🏆 Vitória!</string>
+    <string name="lose">😞 Derrota...</string>
+    <string name="draw">🤝 Empate</string>
+</resources>
