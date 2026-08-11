@@ -580,4 +580,3 @@ fun DashboardTab(viewModel: GameViewModel) {
     }
 }
 
-@Composable

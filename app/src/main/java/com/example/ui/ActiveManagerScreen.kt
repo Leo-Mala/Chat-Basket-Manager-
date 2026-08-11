@@ -340,4 +340,3 @@ fun ActiveManagerScreen(viewModel: GameViewModel, onExitToMainMenu: () -> Unit) 
     }
 }
 
-@Composable

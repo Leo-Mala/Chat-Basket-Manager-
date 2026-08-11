@@ -256,7 +256,7 @@ fun PartidaDialog(
                     }
 
                     isFinished = true
-                    val simulator = GameSimulator(context.applicationContext, simulationConfig())
+                    val simulator = GameSimulator(context.applicationContext, viewModel.simulationConfig())
                     val baseResult = simulator.simulate(homeTeam, awayTeam)
                     
                     val finalHomeScore = if (isHome) userScore else oppScore
@@ -854,4 +854,3 @@ fun PartidaDialog(
     }
 }
 
-@Composable

@@ -617,4 +617,3 @@ fun HistoryTab(viewModel: GameViewModel) {
     }
 }
 
-@Composable

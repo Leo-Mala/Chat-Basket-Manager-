@@ -16,6 +16,7 @@ interface PlayerDao {
     @Query("SELECT * FROM players ORDER BY id") suspend fun all(): List<PlayerEntity>
     @Upsert suspend fun upsertAll(items: List<PlayerEntity>)
     @Query("UPDATE players SET active = 0, teamId = NULL, startingFive = 0, poolType = 'HISTORICAL'") suspend fun archiveAll()
+    @Query("DELETE FROM players") suspend fun clear()
 }
 
 @Dao

@@ -207,8 +207,8 @@ class GameStateRepository(
         val season = seasonEntity?.let { se ->
             Season(teamModels, se.currentDay, se.gamesPlayed, se.seasonNumber, se.currentMonth, se.currentYear, se.nextPlayerId).apply {
                 userTeamName = se.userTeamId?.let { id -> teamById[id]?.name }
-                standings.clear()
-                standings.putAll(standings.filter { it.seasonId == se.id }.associate { row ->
+                this.standings.clear()
+                this.standings.putAll(standings.filter { it.seasonId == se.id }.associate { row ->
                     val record = Season.SeasonRecord(row.wins, row.losses, row.gamesPlayed, row.totalPointsScored, row.totalPointsConceded)
                     (teamById[row.teamId]?.name ?: row.teamId) to record
                 })
@@ -327,5 +327,5 @@ class GameStateRepository(
     private fun PlayerGameStatEntity.toModel() = GameSimulator.PlayerStats(points, rebounds, assists, steals, blocks, turnovers, plusMinus)
     private fun SeasonHistory.toEntity() = SeasonHistoryEntity(seasonNumber, champion, mvp, finalScore, topScorer, topScorerPoints)
     private fun Player.toHistoryEntity(season: Int) = SeasonHistoryPlayerEntity(season, id, name, position, overall, shooting, defense, rebound, passing, athleticism, age, xp, trainings, careerPoints, careerRebounds, careerAssists, careerSteals, careerBlocks, careerGames, championships, mvps, seasonPoints, seasonRebounds, seasonAssists, seasonSteals, seasonBlocks, seasonGames)
-    private fun SeasonHistoryPlayerEntity.toModel() = Player(id, name, position, overall, shooting, defense, rebound, passing, athleticism, age, xp, trainings, false, 0, careerPoints, careerRebounds, careerAssists, careerSteals, careerBlocks, careerGames, championships, mvps, seasonPoints, seasonRebounds, seasonAssists, seasonSteals, seasonBlocks, seasonGames)
+    private fun SeasonHistoryPlayerEntity.toModel() = Player(playerId, name, position, overall, shooting, defense, rebound, passing, athleticism, age, xp, trainings, false, 0, careerPoints, careerRebounds, careerAssists, careerSteals, careerBlocks, careerGames, championships, mvps, seasonPoints, seasonRebounds, seasonAssists, seasonSteals, seasonBlocks, seasonGames)
 }

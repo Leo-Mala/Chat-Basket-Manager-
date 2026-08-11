@@ -404,5 +404,3 @@ fun SetupScreen(viewModel: GameViewModel) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable

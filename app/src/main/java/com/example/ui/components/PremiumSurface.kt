@@ -27,7 +27,7 @@ fun PremiumSurface(
         color = containerColor,
         tonalElevation = 3.dp,
         shadowElevation = 2.dp,
-        content = content
+        content = { Column(content = content) }
     )
 }
 

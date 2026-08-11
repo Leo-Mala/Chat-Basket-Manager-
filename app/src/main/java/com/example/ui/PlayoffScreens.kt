@@ -705,7 +705,7 @@ fun InteractivePlayoffHub(
                         ) {
                             OutlinedButton(
                                 onClick = {
-                                    val sim = GameSimulator(context.applicationContext, simulationConfig())
+                                    val sim = GameSimulator(context.applicationContext, viewModel.simulationConfig())
                                     val gameRes = sim.simulate(homeTeam, awayTeam)
                                     val newRes = updateSeriesWithGame(result, pairing.first, pairing.second, pairing.third, gameRes)
                                     when (interactiveStep) {
@@ -1140,7 +1140,7 @@ fun InteractivePlayoffHub(
                             ) {
                                 OutlinedButton(
                                     onClick = {
-                                        val sim = GameSimulator(context.applicationContext, simulationConfig())
+                                        val sim = GameSimulator(context.applicationContext, viewModel.simulationConfig())
                                         val gameRes = sim.simulate(homeTeam, awayTeam)
                                         val newRes = updateSeriesWithGame(finalsResult, eastChamp, westChamp, "Finais da NBA", gameRes, isFinals = true)
                                         finalsResult = newRes
@@ -1273,4 +1273,3 @@ fun InteractivePlayoffHub(
     }
 }
 
-@Composable

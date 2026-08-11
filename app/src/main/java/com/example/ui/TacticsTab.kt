@@ -301,4 +301,3 @@ fun TacticsTab(viewModel: GameViewModel) {
     }
 }
 
-@Composable

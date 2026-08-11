@@ -376,4 +376,3 @@ fun FinancesTab(viewModel: GameViewModel) {
     }
 }
 
-@Composable

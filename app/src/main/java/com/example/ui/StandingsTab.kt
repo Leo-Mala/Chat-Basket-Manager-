@@ -346,4 +346,3 @@ fun StandingsTab(viewModel: GameViewModel) {
     }
 }
 
-@Composable

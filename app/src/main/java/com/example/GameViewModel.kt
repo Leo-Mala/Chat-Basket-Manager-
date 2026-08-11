@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.NbaDataGenerator
 import com.example.data.repository.GameStateRepository
 import com.example.domain.draft.DraftManager
 import com.example.domain.finance.FinanceManager
@@ -32,6 +33,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -818,6 +820,26 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun simulationConfig(): SimulationConfig = SimulationConfig(
+        difficulty = difficulty,
+        injuriesEnabled = injuriesEnabled,
+        coach = coach,
+        tactics = tactics ?: Tactics(),
+        managedTeam = managedTeam,
+        finance = finances ?: Finance()
+    )
+
+    fun simulatePlayoffsInteractive(context: Context) {
+        val currentSeason = season ?: return
+        viewModelScope.launch(Dispatchers.Default) {
+            val result = currentSeason.simulatePlayoffs(context.applicationContext, simulationConfig())
+            withContext(Dispatchers.Main) {
+                playoffResult = result
+                saveGame()
+            }
+        }
+    }
+
     // Advance to next season
     fun advanceToNextSeason() {
         val currentSeason = season ?: return
@@ -835,7 +857,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             val renewal = f.sponsors.map { it.copy(yearsRemaining = it.yearsRemaining - 1) }.filter { it.yearsRemaining > 0 }
             finances = f.copy(
                 budget = f.budget + tvRights - if (!f.coachSalaryPaid) coachSal else 0,
-                expenses = (f.expenses + Expense("Cota Direitos de TV & Liga", tvRights, "Temporada ${advanced.seasonNumber}") +
+                expenses = (f.expenses + Expense("Cota Direitos de TV & Liga", tvRights, "Temporada ${transition.season.seasonNumber}") +
                     if (!f.coachSalaryPaid) listOf(Expense("Salário Anual do Técnico", coachSal, "Temporada ${currentSeason.seasonNumber}")) else emptyList()).toMutableList(),
                 sponsors = renewal,
                 coachSalaryPaid = false
