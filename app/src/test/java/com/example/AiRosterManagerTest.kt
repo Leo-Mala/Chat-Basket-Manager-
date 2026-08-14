@@ -3,6 +3,7 @@ package com.example
 import com.example.data.NbaDataGenerator
 import com.example.domain.contract.ContractManager
 import com.example.domain.roster.AiRosterManager
+import com.example.domain.rules.FreeAgencyRules
 import com.example.domain.season.OffseasonManager
 import com.example.models.Player
 import com.example.models.Season
@@ -20,7 +21,7 @@ class AiRosterManagerTest {
         val user = teams[0]
         val cpu = teams[1]
         val userIds = user.players.map { it.id }
-        val weakest = cpu.players.minByOrNull { it.overall }!!
+        val weakest = FreeAgencyRules.releaseCandidate(cpu.players)!!
         val elite = player(900_001, weakest.position, 95, 25)
 
         val result = AiRosterManager().rebalance(
@@ -37,13 +38,14 @@ class AiRosterManagerTest {
         assertTrue(result.freeAgents.any { it.id == weakest.id })
         assertEquals(1, result.transactions.size)
         assertEquals(cpu.name, result.transactions.single().teamName)
+        assertEquals(weakest.id, result.transactions.single().releasedPlayerId)
     }
 
     @Test
     fun protectedFreeAgentCannotBeSignedByCpu() {
         val teams = NbaDataGenerator.getAllTeams()
         val cpu = teams[1]
-        val weakest = cpu.players.minByOrNull { it.overall }!!
+        val weakest = FreeAgencyRules.releaseCandidate(cpu.players)!!
         val protectedStar = player(900_002, weakest.position, 96, 26)
 
         val result = AiRosterManager().rebalance(
