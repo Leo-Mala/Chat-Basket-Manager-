@@ -2,7 +2,6 @@ package com.example
 
 import com.example.data.NbaDataGenerator
 import com.example.domain.contract.ContractManager
-import com.example.domain.contract.ContractOffer
 import com.example.domain.draft.DraftManager
 import com.example.domain.roster.RosterManager
 import com.example.domain.trade.TradeManager
@@ -35,9 +34,9 @@ class CareerLifecycleTest {
         assertTrue(draftClass.all { it.id >= next })
 
         val managed = teams.first()
-        val (draftedTeam, releasedName) = DraftManager().draft(managed, draftClass.first())
-        assertNotNull(draftedTeam.players.firstOrNull { it.id == draftClass.first().id })
-        assertTrue(releasedName != null || managed.players.size < 12)
+        val draftResult = DraftManager().draft(managed, draftClass.first())
+        assertNotNull(draftResult.team.players.firstOrNull { it.id == draftClass.first().id })
+        assertTrue(draftResult.releasedPlayer != null || managed.players.size < 12)
 
         val freeAgents = RosterManager().generateFreeAgents(season, draftClass).players
         assertEquals(6, freeAgents.size)

@@ -70,6 +70,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     var currentAwards by mutableStateOf<Awards?>(null)
     var latestResult by mutableStateOf<GameSimulator.GameResult?>(null)
     var playoffResult by mutableStateOf<Season.PlayoffResult?>(null)
+    var loadErrorMessage by mutableStateOf<String?>(null)
     var draftRookies by mutableStateOf<List<Player>>(emptyList())
     var freeAgents by mutableStateOf<List<Player>>(emptyList())
     /** Current contracts keyed by player ID. The Room contracts table is the durable source. */
@@ -117,7 +118,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         loadSavedGame()
     }
 
-    private fun loadSavedGame() {
+    private fun loadSavedGame() = retryLoadSavedGame()
+
+    fun retryLoadSavedGame() {
+        loadErrorMessage = null
         viewModelScope.launch(Dispatchers.IO) { loadSavedGameFromRoom() }
     }
 
@@ -125,63 +129,100 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val snapshot = repository.load()
             if (snapshot == null || snapshot.teamJson == null || snapshot.seasonJson == null || snapshot.coachJson == null) {
-                withContext(Dispatchers.Main) { gameState = GameState.SETUP }
+                withContext(Dispatchers.Main) {
+                    loadErrorMessage = null
+                    gameState = GameState.SETUP
+                }
                 return
             }
 
-            managedTeam = gson.fromJson(snapshot.teamJson, NbaTeam::class.java)
-            coach = gson.fromJson(snapshot.coachJson, Coach::class.java)
-            finances = snapshot.financeJson?.let { gson.fromJson(it, Finance::class.java) } ?: Finance(100000000)
-            tactics = snapshot.tacticsJson?.let { gson.fromJson(it, Tactics::class.java) } ?: Tactics()
-            season = gson.fromJson(snapshot.seasonJson, Season::class.java)
-            season?.userTeamName = managedTeam?.name
-            historyManager = snapshot.historyJson?.let { gson.fromJson(it, HistoryManager::class.java) } ?: HistoryManager()
-            currentAwards = snapshot.awardsJson?.let { gson.fromJson(it, Awards::class.java) }
-            difficulty = snapshot.difficulty
-            injuriesEnabled = snapshot.injuriesEnabled
-            autoSubstitutionsEnabled = snapshot.autoSubstitutionsEnabled
-
+            // Room access and JSON reconstruction stay off the main thread. Only the
+            // final publication into Compose-observed state happens on Dispatchers.Main.
             val listPlayerType = object : com.google.gson.reflect.TypeToken<List<Player>>() {}.type
             val listStaffType = object : com.google.gson.reflect.TypeToken<List<StaffMember>>() {}.type
             val listNoteType = object : com.google.gson.reflect.TypeToken<List<AssistantCoachNotification>>() {}.type
             val listNewsType = object : com.google.gson.reflect.TypeToken<List<News>>() {}.type
-
-            startingFive = snapshot.startingFiveJson?.let { gson.fromJson<List<Player>>(it, listPlayerType) } ?: emptyList()
-            freeAgents = snapshot.freeAgentsJson?.let { gson.fromJson<List<Player>>(it, listPlayerType) } ?: emptyList()
-            draftRookies = snapshot.draftRookiesJson?.let { gson.fromJson<List<Player>>(it, listPlayerType) } ?: emptyList()
             val contractType = object : com.google.gson.reflect.TypeToken<List<PlayerContract>>() {}.type
-            contracts = snapshot.contractsJson?.let { gson.fromJson<List<PlayerContract>>(it, contractType)?.associateBy { c -> c.playerId } } ?: emptyMap()
-            availableStaffMarket = snapshot.staffMarketJson?.let { gson.fromJson<List<StaffMember>>(it, listStaffType) } ?: emptyList()
-            assistantNotifications.clear()
-            snapshot.notificationsJson?.let { assistantNotifications.addAll(gson.fromJson<List<AssistantCoachNotification>>(it, listNoteType)) }
-            teamStaff = snapshot.teamStaffJson?.let { gson.fromJson(it, TeamStaff::class.java) }
-                ?: com.example.data.StaffAndFacilitiesGenerator.generateInitialStaff(managedTeam?.name ?: "Time")
-            teamFacilities = snapshot.facilitiesJson?.let { gson.fromJson(it, TeamFacilities::class.java) } ?: TeamFacilities()
-            financeAdvanced = snapshot.financeAdvancedJson?.let { gson.fromJson(it, FinanceAdvanced::class.java) }
+
+            val loadedTeam = gson.fromJson(snapshot.teamJson, NbaTeam::class.java)
+            val loadedCoach = gson.fromJson(snapshot.coachJson, Coach::class.java)
+            val loadedFinances = snapshot.financeJson?.let { gson.fromJson(it, Finance::class.java) } ?: Finance(100000000)
+            val loadedTactics = snapshot.tacticsJson?.let { gson.fromJson(it, Tactics::class.java) } ?: Tactics()
+            val loadedSeason = gson.fromJson(snapshot.seasonJson, Season::class.java).apply {
+                userTeamName = loadedTeam.name
+            }
+            val loadedHistory = snapshot.historyJson?.let { gson.fromJson(it, HistoryManager::class.java) } ?: HistoryManager()
+            var loadedAwards = snapshot.awardsJson?.let { gson.fromJson(it, Awards::class.java) }
+            val loadedStartingFive = snapshot.startingFiveJson?.let { gson.fromJson<List<Player>>(it, listPlayerType) } ?: emptyList()
+            val loadedFreeAgents = snapshot.freeAgentsJson?.let { gson.fromJson<List<Player>>(it, listPlayerType) } ?: emptyList()
+            val loadedDraftRookies = snapshot.draftRookiesJson?.let { gson.fromJson<List<Player>>(it, listPlayerType) } ?: emptyList()
+            val loadedContracts = snapshot.contractsJson
+                ?.let { gson.fromJson<List<PlayerContract>>(it, contractType)?.associateBy { contract -> contract.playerId } }
+                ?: emptyMap()
+            val loadedStaffMarket = snapshot.staffMarketJson?.let { gson.fromJson<List<StaffMember>>(it, listStaffType) } ?: emptyList()
+            val loadedNotifications = snapshot.notificationsJson
+                ?.let { gson.fromJson<List<AssistantCoachNotification>>(it, listNoteType) }
+                ?: emptyList()
+            val canonicalTeam = loadedSeason.teams.find { it.name == loadedTeam.name } ?: loadedTeam
+            val syncedStartingFive = rosterManager.syncStartingFive(canonicalTeam, loadedStartingFive)
+            val loadedTeamStaff = snapshot.teamStaffJson?.let { gson.fromJson(it, TeamStaff::class.java) }
+                ?: com.example.data.StaffAndFacilitiesGenerator.generateInitialStaff(canonicalTeam.name)
+            val loadedFacilities = snapshot.facilitiesJson?.let { gson.fromJson(it, TeamFacilities::class.java) } ?: TeamFacilities()
+            val loadedFinanceAdvanced = snapshot.financeAdvancedJson?.let { gson.fromJson(it, FinanceAdvanced::class.java) }
                 ?: FinanceAdvanced(activeSponsorships = com.example.data.StaffAndFacilitiesGenerator.generateInitialSponsorships())
-            newsFeed.clear()
-            snapshot.newsFeedJson?.let { newsFeed.addAll(gson.fromJson<List<News>>(it, listNewsType)) }
-            latestBoxScore = snapshot.latestBoxScoreJson?.let { gson.fromJson(it, MatchBoxScore::class.java) }
+            val loadedNews = snapshot.newsFeedJson?.let { gson.fromJson<List<News>>(it, listNewsType) } ?: emptyList()
+            val loadedBoxScore = snapshot.latestBoxScoreJson?.let { gson.fromJson(it, MatchBoxScore::class.java) }
+            val loadedPlayoffResult = snapshot.playoffResultJson?.let { gson.fromJson(it, Season.PlayoffResult::class.java) }
 
-            season?.teams?.find { it.name == managedTeam?.name }?.let {
-                managedTeam = it
-                syncStartingFive()
+            if (loadedSeason.currentDay >= 82 && loadedAwards == null) {
+                loadedAwards = AwardsCalculator.calculateAwards(
+                    loadedSeason.teams,
+                    loadedSeason.standings,
+                    loadedCoach.name,
+                    canonicalTeam.name
+                )
             }
 
-            if (season?.currentDay ?: 0 >= 82) {
-                if (currentAwards == null && season != null) {
-                    currentAwards = AwardsCalculator.calculateAwards(
-                        season!!.teams, season!!.standings, coach?.name ?: "Você", managedTeam?.name
-                    )
-                }
-                gameState = GameState.PLAYOFFS
-            } else {
-                gameState = GameState.ACTIVE
+            val loadedGameState = when {
+                loadedSeason.currentDay < 82 -> GameState.ACTIVE
+                loadedPlayoffResult != null -> GameState.CHAMPIONSHIP_CELEBRATION
+                else -> GameState.PLAYOFFS
             }
 
+            withContext(Dispatchers.Main) {
+                loadErrorMessage = null
+                managedTeam = canonicalTeam
+                coach = loadedCoach
+                finances = loadedFinances
+                tactics = loadedTactics
+                season = loadedSeason
+                historyManager = loadedHistory
+                currentAwards = loadedAwards
+                difficulty = snapshot.difficulty
+                injuriesEnabled = snapshot.injuriesEnabled
+                autoSubstitutionsEnabled = snapshot.autoSubstitutionsEnabled
+                startingFive = syncedStartingFive
+                freeAgents = loadedFreeAgents
+                draftRookies = loadedDraftRookies
+                contracts = loadedContracts
+                availableStaffMarket = loadedStaffMarket
+                assistantNotifications.clear()
+                assistantNotifications.addAll(loadedNotifications)
+                teamStaff = loadedTeamStaff
+                teamFacilities = loadedFacilities
+                financeAdvanced = loadedFinanceAdvanced
+                newsFeed.clear()
+                newsFeed.addAll(loadedNews)
+                latestBoxScore = loadedBoxScore
+                playoffResult = loadedPlayoffResult
+                gameState = loadedGameState
+            }
         } catch (e: Exception) {
             e.printStackTrace()
-            withContext(Dispatchers.Main) { gameState = GameState.SETUP }
+            withContext(Dispatchers.Main) {
+                loadErrorMessage = e.message ?: e::class.java.simpleName
+                gameState = GameState.LOAD_ERROR
+            }
         }
     }
 
@@ -299,6 +340,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val currentDraftRookies = draftRookies.toList()
         val currentStaffMarket = availableStaffMarket.toList()
         val currentContracts = contracts.values.toList()
+        val currentPlayoffResult = playoffResult
 
         viewModelScope.launch(Dispatchers.IO) {
             saveMutex.withLock {
@@ -314,7 +356,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     teamFacilities = currentFacilities, financeAdvanced = currentFinanceAdv,
                     newsFeed = currentNews, latestBoxScore = currentBox,
                     draftRookies = currentDraftRookies, availableStaffMarket = currentStaffMarket,
-                    contracts = currentContracts
+                    contracts = currentContracts, playoffResult = currentPlayoffResult
                 )
             }
         }
@@ -423,12 +465,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearSavedGame(context: Context) {
-        // Invalidate snapshots already queued before deleting the database state.
-        saveGeneration.incrementAndGet()
-        viewModelScope.launch(Dispatchers.IO) {
-            AutoSaveManager.clearGameState()
+        val generation = saveGeneration.incrementAndGet()
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { AutoSaveManager.clearGameState() }
+            if (generation != saveGeneration.get()) return@launch
+            resetCareerState()
+            ToastUtils.showToast(context, "Jogo limpo!")
         }
+    }
+
+    private fun resetCareerState() {
         gameState = GameState.SETUP
+        loadErrorMessage = null
         managedTeam = null
         coach = null
         season = null
@@ -451,7 +499,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         latestBoxScore = null
         injuriesEnabled = true
         autoSubstitutionsEnabled = true
-        ToastUtils.showToast(context, "Jogo limpo!")
     }
 
     fun markNotificationAsRead(id: String) {
@@ -824,8 +871,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.Default) {
             val result = currentSeason.simulatePlayoffs(context.applicationContext, simulationConfig())
             withContext(Dispatchers.Main) {
-                playoffResult = result
-                saveGame()
+                finishPlayoffsWithResult(result)
             }
         }
     }
@@ -871,19 +917,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun draftRookie(selectedRookie: Player, context: Context) {
         val team = managedTeam ?: return
-        val (updatedTeam, releasedPlayerName) = draftManager.draft(team, selectedRookie)
+        val draftResult = draftManager.draft(team, selectedRookie)
+        val updatedTeam = draftResult.team
+        val releasedPlayer = draftResult.releasedPlayer
         managedTeam = updatedTeam
         season?.let { s -> s.teams = s.teams.map { if (it.name == team.name) updatedTeam else it } }
         contracts = contracts.toMutableMap().apply {
-            releasedPlayerName?.let { released ->
-                team.players.firstOrNull { it.name == released }?.let { remove(it.id) }
-            }
+            releasedPlayer?.let { remove(it.id) }
             // The drafted player is intentionally not assigned a contract here.
             // advanceToNextSeason() creates the rookie contract after existing contracts
             // are advanced, preventing the new deal from losing one year immediately.
         }
-        if (releasedPlayerName != null) {
-            ToastUtils.showToast(context, "${selectedRookie.name} draftado! $releasedPlayerName foi dispensado para abrir vaga.", Toast.LENGTH_LONG)
+        if (releasedPlayer != null) {
+            freeAgents = (freeAgents + releasedPlayer).distinctBy { it.id }
+            ToastUtils.showToast(context, "${selectedRookie.name} draftado! ${releasedPlayer.name} foi dispensado para abrir vaga.", Toast.LENGTH_LONG)
         } else {
             ToastUtils.showToast(context, "${selectedRookie.name} draftado com sucesso!", Toast.LENGTH_LONG)
         }
@@ -913,12 +960,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val offer = contractManager.recommendedOffer(selectedPlayer)
         contracts = contracts.toMutableMap().apply {
             put(selectedPlayer.id, contractManager.create(selectedPlayer, result.team.abbreviation, offer))
-            result.releasedPlayerName?.let { released ->
-                team.players.firstOrNull { it.name == released }?.let { remove(it.id) }
-            }
+            result.releasedPlayer?.let { remove(it.id) }
         }
-        freeAgents = freeAgents.filter { it.id != selectedPlayer.id }
-        val message = if (result.releasedPlayerName != null) "${selectedPlayer.name} contratado! ${result.releasedPlayerName} foi dispensado para abrir vaga." else "${selectedPlayer.name} contratado com sucesso!"
+        freeAgents = (freeAgents.filter { it.id != selectedPlayer.id } + listOfNotNull(result.releasedPlayer)).distinctBy { it.id }
+        val message = if (result.releasedPlayer != null) "${selectedPlayer.name} contratado! ${result.releasedPlayer.name} foi dispensado para abrir vaga." else "${selectedPlayer.name} contratado com sucesso!"
         ToastUtils.showToast(context, message, Toast.LENGTH_LONG)
         syncStartingFive()
         saveGame()

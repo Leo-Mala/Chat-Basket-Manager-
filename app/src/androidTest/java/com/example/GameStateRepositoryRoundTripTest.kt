@@ -59,6 +59,7 @@ class GameStateRepositoryRoundTripTest {
             financeAdvancedJson = gson.toJson(FinanceAdvanced()),
             newsFeedJson = gson.toJson(emptyList<News>()),
             latestBoxScoreJson = null,
+            playoffResultJson = "persisted-playoff-marker",
             difficulty = 2,
             injuriesEnabled = true,
             autoSubstitutionsEnabled = true
@@ -74,5 +75,6 @@ class GameStateRepositoryRoundTripTest {
         val loadedContracts = gson.fromJson(loaded.contractsJson, Array<PlayerContract>::class.java).toList()
         assertTrue(loadedContracts.contains(contract))
         assertEquals(managed.name, gson.fromJson(loaded.teamJson, NbaTeam::class.java).name)
+        assertEquals("persisted-playoff-marker", loaded.playoffResultJson)
     }
 }

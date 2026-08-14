@@ -3,10 +3,9 @@ package com.example.domain.roster
 import com.example.models.*
 import com.example.domain.rules.ContractRules
 import com.example.domain.rules.FreeAgencyRules
-import kotlin.random.Random
 
 data class FreeAgentResult(val players: List<Player>)
-data class SigningResult(val team: NbaTeam, val finance: Finance, val releasedPlayerName: String?)
+data class SigningResult(val team: NbaTeam, val finance: Finance, val releasedPlayer: Player?)
 
 class RosterManager {
     fun bestLineup(team: NbaTeam): List<Player> = team.players.filter { it.isAvailable() }.sortedByDescending { it.overall }.take(5)
@@ -50,6 +49,6 @@ class RosterManager {
             budget = finance.budget - cost,
             expenses = (finance.expenses + Expense("Contratação: ${player.name}", cost, "Dia $day")).toMutableList()
         )
-        return SigningResult(team.copy(players = players), updatedFinance, released?.name)
+        return SigningResult(team.copy(players = players), updatedFinance, released)
     }
 }

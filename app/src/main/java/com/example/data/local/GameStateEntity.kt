@@ -25,6 +25,7 @@ data class GameStateEntity(
     val financeAdvancedJson: String?,
     val newsFeedJson: String?,
     val latestBoxScoreJson: String?,
+    val playoffResultJson: String?,
     val difficulty: Int,
     val injuriesEnabled: Boolean,
     val autoSubstitutionsEnabled: Boolean,

@@ -27,7 +27,8 @@ object AutoSaveManager {
         assistantNotifications: List<AssistantCoachNotification> = emptyList(), teamStaff: TeamStaff? = null,
         teamFacilities: TeamFacilities? = null, financeAdvanced: FinanceAdvanced? = null, newsFeed: List<News> = emptyList(),
         latestBoxScore: MatchBoxScore? = null, draftRookies: List<Player> = emptyList(),
-        availableStaffMarket: List<StaffMember> = emptyList(), contracts: List<PlayerContract> = emptyList()
+        availableStaffMarket: List<StaffMember> = emptyList(), contracts: List<PlayerContract> = emptyList(),
+        playoffResult: Season.PlayoffResult? = null
     ) = saveMutex.withLock {
         val r = getRepositoryFromInitialized()
         r.save(GameStateRepository.GameStateSnapshot(
@@ -38,7 +39,7 @@ object AutoSaveManager {
             contractsJson = gson.toJson(contracts), staffMarketJson = gson.toJson(availableStaffMarket), notificationsJson = gson.toJson(assistantNotifications.toList()),
             teamStaffJson = teamStaff?.let(gson::toJson), facilitiesJson = teamFacilities?.let(gson::toJson),
             financeAdvancedJson = financeAdvanced?.let(gson::toJson), newsFeedJson = gson.toJson(newsFeed.toList()),
-            latestBoxScoreJson = latestBoxScore?.let(gson::toJson), difficulty = difficulty,
+            latestBoxScoreJson = latestBoxScore?.let(gson::toJson), playoffResultJson = playoffResult?.let(gson::toJson), difficulty = difficulty,
             injuriesEnabled = injuriesEnabled, autoSubstitutionsEnabled = autoSubstitutionsEnabled
         ))
     }

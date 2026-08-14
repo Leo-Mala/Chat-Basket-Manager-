@@ -1,9 +1,10 @@
 package com.example.domain.draft
 
 import com.example.models.*
-import com.example.domain.rules.ContractRules
 
 class DraftManager {
+    data class DraftResult(val team: NbaTeam, val releasedPlayer: Player?)
+
     private val firstNames = listOf("Cooper", "Ace", "Dylan", "VJ", "Egor", "Karter", "Hugo", "Nolan", "Tre", "Drake", "Koa")
     private val lastNames = listOf("Flagg", "Bailey", "Harper", "Edgecombe", "Demin", "Knox", "Gonzalez", "Traore", "Johnson", "Powell")
     private val positions = listOf("PG", "SG", "SF", "PF", "C")
@@ -27,13 +28,13 @@ class DraftManager {
         }
     }
 
-    fun draft(team: NbaTeam, rookie: Player, maxRosterSize: Int = 12): Pair<NbaTeam, String?> {
+    fun draft(team: NbaTeam, rookie: Player, maxRosterSize: Int = 12): DraftResult {
         require(rookie.age in 18..22) { "Rookie fora da faixa etária do Draft" }
         val players = team.players.toMutableList()
+        if (players.any { it.id == rookie.id }) return DraftResult(team, null)
         val released = if (players.size >= maxRosterSize) players.minByOrNull { it.overall } else null
         released?.let { players.remove(it) }
-        if (players.any { it.id == rookie.id }) return team to "Jogador já pertence ao elenco"
         players += rookie
-        return team.copy(players = players) to released?.name
+        return DraftResult(team.copy(players = players), released)
     }
 }

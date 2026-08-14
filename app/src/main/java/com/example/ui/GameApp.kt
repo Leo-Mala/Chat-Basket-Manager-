@@ -166,6 +166,13 @@ fun BasketManagerGameApp() {
             ) { state ->
                 when (state) {
                     GameState.SETUP -> SetupScreen(viewModel)
+                    GameState.LOAD_ERROR -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Não foi possível carregar a carreira", style = MaterialTheme.typography.titleLarge)
+                            Text(viewModel.loadErrorMessage ?: "Erro desconhecido", textAlign = TextAlign.Center)
+                            Button(onClick = { viewModel.retryLoadSavedGame() }) { Text("Tentar novamente") }
+                        }
+                    }
                     GameState.ACTIVE -> ActiveManagerScreen(viewModel = viewModel, onExitToMainMenu = { showMainMenu = true })
                     GameState.PLAYOFFS -> PlayoffScreen(viewModel)
                     GameState.CHAMPIONSHIP_CELEBRATION -> CelebrationScreen(viewModel)
