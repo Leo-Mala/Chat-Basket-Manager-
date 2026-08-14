@@ -16,7 +16,9 @@ data class TeamSimulationProfile(
 /** Centralized balance model for score generation. */
 object SimulationRules {
     private const val LEAGUE_AVERAGE_SCORE = 113.0
-    private const val MATCHUP_SCALE = 0.72
+    // A 20-point team-quality gap must create a strong favorite, not a guaranteed winner.
+    private const val MATCHUP_SCALE = 0.34
+    private const val SCORE_VARIANCE = 14.0
 
     fun difficultyUserModifier(difficulty: Int): Double = when (difficulty) {
         0 -> 1.06
@@ -61,7 +63,8 @@ object SimulationRules {
             offense = off,
             defense = def,
             pace = tactics.getPaceFactor(),
-            homeAdvantage = if (home) 3.2 else 0.0
+            // A modest two-point home edge produces a meaningful but not dominant advantage.
+            homeAdvantage = if (home) 2.0 else 0.0
         )
     }
 
@@ -69,7 +72,8 @@ object SimulationRules {
         val paceFactor = ((offense.pace + opponent.pace) / 2.0).coerceIn(.82, 1.20)
         val matchup = (offense.offense - opponent.defense) * MATCHUP_SCALE
         val raw = LEAGUE_AVERAGE_SCORE + matchup + offense.homeAdvantage
-        val variance = rng.nextDouble(-9.0, 9.0)
+        // Basketball outcomes need enough game-to-game noise for real upsets to remain possible.
+        val variance = rng.nextDouble(-SCORE_VARIANCE, SCORE_VARIANCE)
         return (raw * paceFactor + variance).roundToInt().coerceIn(78, 145)
     }
 }
