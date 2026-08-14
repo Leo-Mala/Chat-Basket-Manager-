@@ -101,6 +101,13 @@ class Season(
         return simulateSeries(homeTeam, awayTeam, "Finais da NBA", context, isFinals = true, simulationConfig = simulationConfig)
     }
 
+    private fun recordPostseasonResult(result: GameSimulator.GameResult) = synchronized(this) {
+        val utn = userTeamName
+        if (utn == null || result.homeTeam.name == utn || result.awayTeam.name == utn) {
+            history.add(result)
+        }
+    }
+
     fun simulateSeries(
         team1: NbaTeam,
         team2: NbaTeam,
@@ -121,7 +128,7 @@ class Season(
                 val awayTeam = if (homeTeam == team1) team2 else team1
                 val result = simulator.simulate(homeTeam, awayTeam)
                 games.add(result)
-                addResult(result)
+                recordPostseasonResult(result)
 
                 val homeScore = if (homeTeam == team1) result.homeScore else result.awayScore
                 val awayScore = if (homeTeam == team1) result.awayScore else result.homeScore
