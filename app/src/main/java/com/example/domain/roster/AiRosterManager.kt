@@ -44,9 +44,7 @@ class AiRosterManager {
             var team = teamByName[teamName] ?: return@forEach
 
             for (upgrade in 0 until maxUpgradesPerTeam) {
-                val weakest = team.players.minWithOrNull(
-                    compareBy<Player> { it.overall }.thenByDescending { it.age }.thenBy { it.id }
-                ) ?: break
+                val weakest = FreeAgencyRules.releaseCandidate(team.players) ?: break
 
                 val eligible = market.filter {
                     it.id in signablePlayerIds &&
