@@ -55,4 +55,17 @@ jobs:
           chmod +x gradlew
 
       - name: Run lint
-        run: ./gradlew --no-daemon lint --stacktrace
+        shell: bash
+        run: |
+          set +e
+          ./gradlew --no-daemon lint --stacktrace
+          status=$?
+          report="app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+          if [ -f "$report" ]; then
+            echo "===== FULL ANDROID LINT REPORT ====="
+            cat "$report"
+            echo "===== END ANDROID LINT REPORT ====="
+          else
+            echo "Lint report not found at $report"
+          fi
+          exit "$status"
