@@ -1,8 +1,13 @@
 name: Android Lint
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+      - fix/android-build-validation
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -35,19 +40,32 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      - name: Set up Gradle 9.3.1
+      - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '9.3.1'
 
-      - name: Bootstrap Gradle Wrapper
+      - name: Validate Gradle Wrapper
         shell: bash
         run: |
           set -euo pipefail
-          gradle --no-daemon wrapper --gradle-version 9.3.1 --distribution-type bin
           test -s gradlew
+          test -s gradlew.bat
           test -s gradle/wrapper/gradle-wrapper.jar
+          test -s gradle/wrapper/gradle-wrapper.properties
+          grep -q 'gradle-9.3.1-bin.zip' gradle/wrapper/gradle-wrapper.properties
           chmod +x gradlew
 
       - name: Run lint
-        run: ./gradlew --no-daemon lint --stacktrace
+        shell: bash
+        run: |
+          set +e
+          ./gradlew --no-daemon lint --stacktrace
+          status=$?
+          report="app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+          if [ -f "$report" ]; then
+            echo "===== FULL ANDROID LINT REPORT ====="
+            cat "$report"
+            echo "===== END ANDROID LINT REPORT ====="
+          else
+            echo "Lint report not found at $report"
+          fi
+          exit "$status"
