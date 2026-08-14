@@ -1,6 +1,7 @@
 package com.example.models
 
 import java.io.Serializable
+import kotlin.math.roundToInt
 
 data class Player(
     val id: Int,
@@ -66,6 +67,25 @@ data class Player(
         overall = calculateOverall()
     }
 
+    /**
+     * Stable career aptitude derived from the durable player ID.
+     * No extra persisted field is required, so old saves retain deterministic development.
+     * The four bands deliberately create bust/normal/high/elite career trajectories instead
+     * of giving every young player essentially the same growth curve.
+     */
+    private fun developmentMultiplier(): Double {
+        val bucket = Math.floorMod(id.toLong() * 37L + 17L, 100L).toInt()
+        return when {
+            bucket < 15 -> 0.15 // low-development/bust profile
+            bucket < 65 -> 0.55 // normal profile
+            bucket < 93 -> 0.85 // high-development profile
+            else -> 1.10        // rare elite-development profile
+        }
+    }
+
+    private fun developmentChance(baseChance: Int): Int =
+        (baseChance * developmentMultiplier()).roundToInt().coerceIn(0, 100)
+
     fun evolveInSeason(ptsInGame: Int = 0) {
         val earnedXp = (8 + ptsInGame / 4).coerceIn(8, 25)
         xp += earnedXp
@@ -84,14 +104,20 @@ data class Player(
                         "C"  -> listOf("defense", "rebound", "athleticism")
                         else -> all
                     }
-                    if (random.nextInt(100) < 80) boostAttribute(preferred[random.nextInt(preferred.size)], 1)
+                    if (random.nextInt(100) < developmentChance(80)) {
+                        boostAttribute(preferred[random.nextInt(preferred.size)], 1)
+                    }
                 }
                 age in 23..25 -> {
-                    if (random.nextInt(100) < 45) boostAttribute(all[random.nextInt(all.size)], 1)
+                    if (random.nextInt(100) < developmentChance(45)) {
+                        boostAttribute(all[random.nextInt(all.size)], 1)
+                    }
                 }
                 age in 26..30 -> {
                     val technical = listOf("shooting", "passing", "defense")
-                    if (random.nextInt(100) < 12) boostAttribute(technical[random.nextInt(technical.size)], 1)
+                    if (random.nextInt(100) < developmentChance(12)) {
+                        boostAttribute(technical[random.nextInt(technical.size)], 1)
+                    }
                 }
                 else -> {
                     if (seasonGames > 40 && random.nextInt(100) < 20 && athleticism > 50) {
@@ -120,15 +146,23 @@ data class Player(
 
         when {
             age <= 22 -> {
-                if (random.nextInt(100) < 75) boostAttribute(all[random.nextInt(all.size)], 1)
-                if (random.nextInt(100) < 20) boostAttribute(all[random.nextInt(all.size)], 1)
+                if (random.nextInt(100) < developmentChance(75)) {
+                    boostAttribute(all[random.nextInt(all.size)], 1)
+                }
+                if (random.nextInt(100) < developmentChance(20)) {
+                    boostAttribute(all[random.nextInt(all.size)], 1)
+                }
             }
             age <= 25 -> {
-                if (random.nextInt(100) < 55) boostAttribute(all[random.nextInt(all.size)], 1)
+                if (random.nextInt(100) < developmentChance(55)) {
+                    boostAttribute(all[random.nextInt(all.size)], 1)
+                }
             }
             age <= 30 -> {
                 val technical = listOf("shooting", "passing", "defense")
-                if (random.nextInt(100) < 15) boostAttribute(technical[random.nextInt(technical.size)], 1)
+                if (random.nextInt(100) < developmentChance(15)) {
+                    boostAttribute(technical[random.nextInt(technical.size)], 1)
+                }
                 if (random.nextInt(100) < 10 && athleticism > 50) athleticism--
             }
             age <= 33 -> {
