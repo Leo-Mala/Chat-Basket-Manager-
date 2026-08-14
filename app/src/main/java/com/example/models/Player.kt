@@ -90,19 +90,34 @@ data class Player(
         else -> 100
     }
 
-    /** Individual prime window. High-upside players are more likely to bloom later. */
+    /** Individual prime window. Higher-upside careers retain a credible late-blooming tail. */
     private fun developmentPeakAge(): Int {
         val variation = Math.floorMod(id.toLong() * 37L + 11L, 100L).toInt()
         return when (developmentProfile()) {
             0 -> 26 + (variation % 4) // 26..29
             1 -> 28 + (variation % 5) // 28..32
-            2 -> 30 + (variation % 5) // 30..34
-            else -> 32 + (variation % 4) // 32..35
+            2 -> 31 + (variation % 5) // 31..35
+            else -> 33 + (variation % 4) // 33..36
         }
     }
 
     private fun growthChance(baseChance: Int): Int =
         (baseChance * developmentGrowthPercent() / 100).coerceIn(0, 95)
+
+    /**
+     * High-upside players develop more slowly in the early prime and concentrate more of their
+     * remaining growth in the final three seasons before their personal peak. This shifts timing
+     * without simply adding extra career growth or inflating the league-wide 90+ population.
+     */
+    private fun primeGrowthChance(baseChance: Int, currentAge: Int, peakAge: Int): Int {
+        val scaled = growthChance(baseChance)
+        if (developmentProfile() < 2) return scaled
+        return if (currentAge < peakAge - 2) {
+            (scaled * 35 / 100).coerceAtLeast(1)
+        } else {
+            (scaled * 150 / 100).coerceAtMost(95)
+        }
+    }
 
     /**
      * Prime development should polish skills that actually matter for the player's role.
@@ -149,7 +164,7 @@ data class Player(
                 }
                 age <= peakAge -> {
                     val prime = primeAttributes()
-                    if (random.nextInt(100) < growthChance(36)) {
+                    if (random.nextInt(100) < primeGrowthChance(36, age, peakAge)) {
                         boostAttribute(prime[random.nextInt(prime.size)], 1)
                     }
                 }
@@ -197,7 +212,7 @@ data class Player(
             }
             age <= peakAge -> {
                 val prime = primeAttributes()
-                if (random.nextInt(100) < growthChance(40)) {
+                if (random.nextInt(100) < primeGrowthChance(40, age, peakAge)) {
                     boostAttribute(prime[random.nextInt(prime.size)], 1)
                 }
             }
