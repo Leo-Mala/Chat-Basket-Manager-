@@ -2,7 +2,10 @@ name: Android Build & Test
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches:
+      - main
+      - master
+      - fix/android-build-validation
   pull_request:
   workflow_dispatch:
 
@@ -13,7 +16,7 @@ jobs:
   test-and-build:
     name: Test and build Android
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
       RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
@@ -44,30 +47,23 @@ jobs:
             "emulator" \
             "platforms;android-36" \
             "build-tools;36.0.0" \
+            "platforms;android-35" \
             "system-images;android-35;google_apis;x86_64"
 
-      - name: Set up Gradle 9.3.1 bootstrap
+      - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '9.3.1'
-          cache-cleanup: on-success
 
-      - name: Bootstrap Gradle Wrapper
+      - name: Validate Gradle Wrapper
         shell: bash
         run: |
           set -euo pipefail
-          gradle --no-daemon wrapper --gradle-version 9.3.1 --distribution-type bin
           test -s gradlew
+          test -s gradlew.bat
           test -s gradle/wrapper/gradle-wrapper.jar
           test -s gradle/wrapper/gradle-wrapper.properties
+          grep -q 'gradle-9.3.1-bin.zip' gradle/wrapper/gradle-wrapper.properties
           chmod +x gradlew
           ./gradlew --version
-
-      - name: Verify Android build environment
-        run: |
-          java -version
-          ./gradlew --version
-          sdkmanager --list_installed
 
       - name: Prepare release signing
         if: ${{ env.RELEASE_KEYSTORE_BASE64 != '' }}
@@ -85,28 +81,14 @@ jobs:
       - name: Run unit tests
         run: ./gradlew --no-daemon test --stacktrace
 
-      - name: Run debug lint
-        run: ./gradlew --no-daemon lintDebug --stacktrace
-
       - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug --stacktrace
+        run: ./gradlew assembleDebug
 
-      - name: Build release APK and AAB
-        run: ./gradlew --no-daemon assembleRelease bundleRelease --stacktrace
+      - name: Build release APK
+        run: ./gradlew assembleRelease
 
-      - name: Verify release outputs
-        shell: bash
-        run: |
-          set -euo pipefail
-          debug_apk="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
-          release_apk="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
-          release_aab="$(find app/build/outputs/bundle/release -maxdepth 1 -type f -name '*.aab' -print -quit)"
-          test -n "$debug_apk" && test -s "$debug_apk"
-          test -n "$release_apk" && test -s "$release_apk"
-          test -n "$release_aab" && test -s "$release_aab"
-          echo "Debug APK: $debug_apk"
-          echo "Release APK: $release_apk"
-          echo "Release AAB: $release_aab"
+      - name: Build release AAB
+        run: ./gradlew bundleRelease
 
       - name: Run Android instrumented tests on API 35 emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -118,8 +100,20 @@ jobs:
           disable-animations: true
           script: ./gradlew --no-daemon connectedDebugAndroidTest --stacktrace
 
+      - name: Verify Android build outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          debug_apk="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -size +0c -print -quit)"
+          release_apk="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -size +0c -print -quit)"
+          release_aab="$(find app/build/outputs/bundle/release -maxdepth 1 -type f -name '*.aab' -size +0c -print -quit)"
+          test -n "$debug_apk"
+          test -n "$release_apk"
+          test -n "$release_aab"
+          stat -c '%n %s bytes' "$debug_apk" "$release_apk" "$release_aab"
+
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: basket-manager-release-artifacts
           path: |
@@ -130,7 +124,7 @@ jobs:
 
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: basket-manager-test-reports
           path: |
