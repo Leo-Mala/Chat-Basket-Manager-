@@ -133,6 +133,21 @@ data class Player(
         else -> listOf("shooting", "defense", "rebound", "passing")
     }
 
+    /**
+     * A small deterministic late-maturation pulse gives the late-blooming tail an observable OVR
+     * peak at 34+ without increasing development for the majority of players. It only applies to
+     * high/exceptional profiles whose personal peak is already in the late-prime window.
+     */
+    private fun applyLateMaturationPulse(peakAge: Int) {
+        val profile = developmentProfile()
+        if (profile < 2 || peakAge < 34 || age != peakAge) return
+        val prime = primeAttributes()
+        val repetitions = if (profile == 3) 8 else 6
+        repeat(repetitions) { index ->
+            boostAttribute(prime[index % prime.size], 1)
+        }
+    }
+
     fun evolveInSeason(ptsInGame: Int = 0) {
         val earnedXp = (8 + ptsInGame / 4).coerceIn(8, 25)
         xp += earnedXp
@@ -215,6 +230,7 @@ data class Player(
                 if (random.nextInt(100) < primeGrowthChance(40, age, peakAge)) {
                     boostAttribute(prime[random.nextInt(prime.size)], 1)
                 }
+                applyLateMaturationPulse(peakAge)
             }
             else -> {
                 val yearsPastPeak = (age - peakAge).coerceAtLeast(1)
