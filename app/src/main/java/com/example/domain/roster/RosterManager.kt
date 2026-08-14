@@ -3,6 +3,7 @@ package com.example.domain.roster
 import com.example.models.*
 import com.example.domain.rules.ContractRules
 import com.example.domain.rules.FreeAgencyRules
+import com.example.domain.rules.PlayerGenerationRules
 
 data class FreeAgentResult(val players: List<Player>)
 data class SigningResult(val team: NbaTeam, val finance: Finance, val releasedPlayer: Player?)
@@ -23,15 +24,15 @@ class RosterManager {
         val positions = listOf("PG", "SG", "SF", "PF", "C")
         val ids = requireNotNull(season) { "Free-agent generation requires an active season for globally unique player IDs" }.allocatePlayerIds(6)
         return FreeAgentResult(List(6) { index ->
-            val random = kotlin.random.Random(ids.first + index)
-            val ovr = random.nextInt(75, 86)
-            Player(
-                ids.elementAt(index),
-                "${first[random.nextInt(first.size)]} ${last[random.nextInt(last.size)]}",
-                positions[random.nextInt(positions.size)],
-                ovr, ovr - random.nextInt(0, 9), ovr - random.nextInt(0, 9),
-                ovr - random.nextInt(0, 9), ovr - random.nextInt(0, 9),
-                ovr - random.nextInt(0, 9), 20 + random.nextInt(0, 13)
+            val id = ids.first + index
+            val random = kotlin.random.Random(id)
+            PlayerGenerationRules.createBalancedPlayer(
+                id = id,
+                name = "${first[random.nextInt(first.size)]} ${last[random.nextInt(last.size)]}",
+                position = positions[random.nextInt(positions.size)],
+                targetOverall = random.nextInt(72, 85),
+                age = 20 + random.nextInt(0, 13),
+                random = random
             )
         })
     }
