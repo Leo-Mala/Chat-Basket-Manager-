@@ -24,10 +24,18 @@ class OffseasonManager(
     private val aiDraftManager: AiDraftManager = AiDraftManager(draftManager),
     private val aiTradeManager: AiTradeManager = AiTradeManager()
 ) {
+    /** Lightweight diagnostics describing the CPU market actions performed in one offseason. */
+    data class Activity(
+        val cpuTrades: Int = 0,
+        val cpuFreeAgentSignings: Int = 0,
+        val cpuDraftPicks: Int = 0
+    )
+
     data class Result(
         val season: Season,
         val contracts: Map<Int, PlayerContract>,
-        val freeAgents: List<Player>
+        val freeAgents: List<Player>,
+        val activity: Activity = Activity()
     )
 
     fun advance(
@@ -135,6 +143,11 @@ class OffseasonManager(
                     agedExpiredPlayers +
                     aiDraftResult.releasedPlayers +
                     aiDraftResult.undraftedRookies
+            ),
+            activity = Activity(
+                cpuTrades = aiTradeResult.trades.size,
+                cpuFreeAgentSignings = aiFreeAgencyResult.transactions.size,
+                cpuDraftPicks = aiDraftResult.picks.size
             )
         )
     }
