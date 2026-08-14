@@ -39,27 +39,29 @@ class AiRosterManager {
             if (teamName == userTeamName) return@forEach
             var team = teamByName[teamName] ?: return@forEach
 
-            repeat(maxUpgradesPerTeam) {
+            for (upgrade in 0 until maxUpgradesPerTeam) {
                 val weakest = team.players.minWithOrNull(
                     compareBy<Player> { it.overall }.thenByDescending { it.age }.thenBy { it.id }
-                ) ?: return@repeat
+                ) ?: break
 
                 val eligible = market.filter {
                     it.id !in protectedPlayerIds &&
                         FreeAgencyRules.validateCandidate(it) &&
                         it.overall >= weakest.overall + minimumUpgrade
                 }
-                if (eligible.isEmpty()) return@repeat
+                if (eligible.isEmpty()) break
 
                 val samePosition = eligible.filter { it.position == weakest.position }
                 val candidatePool = if (samePosition.isNotEmpty()) samePosition else eligible
                 val candidate = candidatePool.maxWithOrNull(
-                    compareBy<Player> { it.overall }.thenByDescending { -it.age }.thenByDescending { -it.id }
-                ) ?: return@repeat
+                    compareBy<Player> { it.overall }
+                        .thenBy { -it.age }
+                        .thenBy { -it.id }
+                ) ?: break
 
                 val updatedPlayers = team.players.toMutableList()
                 val weakestIndex = updatedPlayers.indexOfFirst { it.id == weakest.id }
-                if (weakestIndex < 0) return@repeat
+                if (weakestIndex < 0) break
                 updatedPlayers[weakestIndex] = candidate
                 team = team.copy(players = updatedPlayers)
                 teamByName[teamName] = team
