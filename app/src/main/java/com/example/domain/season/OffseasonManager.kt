@@ -1,6 +1,7 @@
 package com.example.domain.season
 
 import com.example.domain.contract.ContractManager
+import com.example.domain.roster.AiRosterManager
 import com.example.domain.rules.FreeAgencyRules
 import com.example.domain.rules.SeasonRules
 import com.example.models.NbaTeam
@@ -14,7 +15,8 @@ import com.example.models.Season
  */
 class OffseasonManager(
     private val contractManager: ContractManager = ContractManager(),
-    private val seasonManager: SeasonManager = SeasonManager()
+    private val seasonManager: SeasonManager = SeasonManager(),
+    private val aiRosterManager: AiRosterManager = AiRosterManager()
 ) {
     data class Result(
         val season: Season,
@@ -27,6 +29,14 @@ class OffseasonManager(
         currentContracts: Map<Int, PlayerContract>,
         currentFreeAgents: List<Player>
     ): Result {
+        val priorityTeamNames = currentSeason.standings.entries
+            .sortedWith(
+                compareBy<Map.Entry<String, Season.SeasonRecord>> { it.value.wins }
+                    .thenBy { it.value.pointDifference }
+                    .thenBy { it.key }
+            )
+            .map { it.key }
+
         val contractResult = contractManager.advanceSeason(currentContracts.values)
         val expiredIds = contractResult.expiredPlayerIds
         val expiredPlayers = currentSeason.teams
@@ -37,9 +47,7 @@ class OffseasonManager(
             team.copy(players = team.players.filterNot { it.id in expiredIds })
         }
 
-        // Players outside a roster still live through the offseason. Previously this pool
-        // never aged or retired, which allowed decades-old free agents to accumulate forever.
-        val agedFreeAgents = (currentFreeAgents + expiredPlayers)
+        fun ageMarket(players: Collection<Player>): List<Player> = players
             .distinctBy { it.id }
             .onEach { player ->
                 player.advanceSeason()
@@ -49,9 +57,22 @@ class OffseasonManager(
             }
             .filter { it.age <= SeasonRules.MAX_PLAYER_AGE }
 
-        val advanced = seasonManager.advanceSeason(currentSeason)
-        val nextContracts = contractResult.contracts.toMutableMap()
+        // CPU teams act only on the market that already existed before this offseason.
+        // Fresh contract expirations enter free agency after the CPU phase. This preserves
+        // the game's existing contract-expiration phase and avoids instant CPU poaching.
+        val agedExistingFreeAgents = ageMarket(currentFreeAgents)
+        val agedExpiredPlayers = ageMarket(expiredPlayers)
 
+        val advanced = seasonManager.advanceSeason(currentSeason)
+        val aiResult = aiRosterManager.rebalance(
+            teams = advanced.teams,
+            freeAgents = agedExistingFreeAgents,
+            userTeamName = advanced.userTeamName,
+            priorityTeamNames = priorityTeamNames
+        )
+        advanced.teams = aiResult.teams
+
+        val nextContracts = contractResult.contracts.toMutableMap()
         advanced.teams.forEach { team ->
             team.players.forEach { player ->
                 val existing = nextContracts[player.id]
@@ -73,7 +94,7 @@ class OffseasonManager(
         return Result(
             season = advanced,
             contracts = nextContracts,
-            freeAgents = FreeAgencyRules.normalizeMarket(agedFreeAgents)
+            freeAgents = FreeAgencyRules.normalizeMarket(aiResult.freeAgents + agedExpiredPlayers)
         )
     }
 }
