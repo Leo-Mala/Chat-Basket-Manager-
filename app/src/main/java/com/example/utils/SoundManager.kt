@@ -1,56 +1,27 @@
 package com.example.utils
 
 import android.content.Context
-import android.media.MediaPlayer
-import com.example.R
+import android.media.AudioManager
+import android.media.ToneGenerator
 
-class SoundManager(private val context: Context) {
-
-    private var whistlePlayer: MediaPlayer? = null
-    private var basketPlayer: MediaPlayer? = null
-    private var buzzerPlayer: MediaPlayer? = null
-
-    init {
-        try {
-            whistlePlayer = MediaPlayer.create(context, R.raw.whistle)
-            basketPlayer = MediaPlayer.create(context, R.raw.basket)
-            buzzerPlayer = MediaPlayer.create(context, R.raw.buzzer)
-        } catch (e: Exception) {
-            // Ignorar se os arquivos não existirem
-        }
-    }
+/** Lightweight game sound cues that do not depend on bundled media files. */
+class SoundManager(@Suppress("UNUSED_PARAMETER") context: Context) {
+    private var toneGenerator: ToneGenerator? = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
 
     fun playWhistle() {
-        try {
-            whistlePlayer?.start()
-        } catch (e: Exception) {
-            // Ignorar erro
-        }
+        toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 120)
     }
 
     fun playBasket() {
-        try {
-            basketPlayer?.start()
-        } catch (e: Exception) {
-            // Ignorar erro
-        }
+        toneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 90)
     }
 
     fun playBuzzer() {
-        try {
-            buzzerPlayer?.start()
-        } catch (e: Exception) {
-            // Ignorar erro
-        }
+        toneGenerator?.startTone(ToneGenerator.TONE_PROP_NACK, 220)
     }
 
     fun release() {
-        try {
-            whistlePlayer?.release()
-            basketPlayer?.release()
-            buzzerPlayer?.release()
-        } catch (e: Exception) {
-            // Ignorar erro
-        }
+        toneGenerator?.release()
+        toneGenerator = null
     }
 }
