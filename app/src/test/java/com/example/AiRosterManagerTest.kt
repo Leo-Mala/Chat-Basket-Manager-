@@ -60,17 +60,22 @@ class AiRosterManagerTest {
     }
 
     @Test
-    fun cpuDoesNotMakeMarginalMoveBelowMinimumUpgrade() {
+    fun cpuDoesNotMakeMarginalMoveBelowMinimumUpgradeAnywhereInLeague() {
         val teams = NbaDataGenerator.getAllTeams()
-        val cpu = teams[1]
-        val weakest = cpu.players.minByOrNull { it.overall }!!
+        val user = teams[0]
+        val cpuTeams = teams.filter { it.name != user.name }
+        val weakestLeaguePlayer = cpuTeams
+            .flatMap { team -> team.players.map { player -> team to player } }
+            .minByOrNull { (_, player) -> player.overall }!!
+        val targetTeam = weakestLeaguePlayer.first
+        val weakest = weakestLeaguePlayer.second
         val marginal = player(900_003, weakest.position, weakest.overall + 3, 24)
 
         val result = AiRosterManager().rebalance(
             teams = teams,
             freeAgents = listOf(marginal),
-            userTeamName = teams[0].name,
-            priorityTeamNames = listOf(cpu.name),
+            userTeamName = user.name,
+            priorityTeamNames = listOf(targetTeam.name),
             maxUpgradesPerTeam = 1,
             minimumUpgrade = 4
         )
