@@ -104,6 +104,20 @@ data class Player(
     private fun growthChance(baseChance: Int): Int =
         (baseChance * developmentGrowthPercent() / 100).coerceIn(0, 95)
 
+    /**
+     * Prime development should polish skills that actually matter for the player's role.
+     * This prevents late-career growth events from being wasted on very low-weight attributes,
+     * especially for centers and power forwards, while still keeping the OVR gain gradual.
+     */
+    private fun primeAttributes(): List<String> = when (position) {
+        "PG" -> listOf("passing", "shooting")
+        "SG" -> listOf("shooting", "passing", "defense")
+        "SF" -> listOf("shooting", "defense", "passing")
+        "PF" -> listOf("defense", "rebound", "shooting")
+        "C" -> listOf("defense", "rebound")
+        else -> listOf("shooting", "defense", "rebound", "passing")
+    }
+
     fun evolveInSeason(ptsInGame: Int = 0) {
         val earnedXp = (8 + ptsInGame / 4).coerceIn(8, 25)
         xp += earnedXp
@@ -134,9 +148,9 @@ data class Player(
                     }
                 }
                 age <= peakAge -> {
-                    val technical = listOf("shooting", "passing", "defense")
-                    if (random.nextInt(100) < growthChance(28)) {
-                        boostAttribute(technical[random.nextInt(technical.size)], 1)
+                    val prime = primeAttributes()
+                    if (random.nextInt(100) < growthChance(36)) {
+                        boostAttribute(prime[random.nextInt(prime.size)], 1)
                     }
                 }
                 else -> {
@@ -182,9 +196,9 @@ data class Player(
                 }
             }
             age <= peakAge -> {
-                val technical = listOf("shooting", "passing", "defense")
-                if (random.nextInt(100) < growthChance(30)) {
-                    boostAttribute(technical[random.nextInt(technical.size)], 1)
+                val prime = primeAttributes()
+                if (random.nextInt(100) < growthChance(40)) {
+                    boostAttribute(prime[random.nextInt(prime.size)], 1)
                 }
             }
             else -> {
