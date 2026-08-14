@@ -115,6 +115,9 @@ class LeagueBalanceAuditTest {
         val averageAge = snapshots.map { it.averageAge }.average()
         val peakStar90Share = snapshots.maxOf { it.star90Share }
         val peakStar95Share = snapshots.maxOf { it.star95Share }
+        val matureSnapshots = snapshots.filter { it.seasonNumber >= 11 }
+        val matureAverageStar90Share = matureSnapshots.map { it.star90Share }.average()
+        val maturePeakStar90Share = matureSnapshots.maxOf { it.star90Share }
         val averageRoster = snapshots.map { it.averageRosterSize }.average()
         val minimumRoster = snapshots.minOf { it.minRosterSize }
         val maximumRoster = snapshots.maxOf { it.maxRosterSize }
@@ -133,6 +136,8 @@ class LeagueBalanceAuditTest {
                 "|avgAge=${"%.2f".format(averageAge)}" +
                 "|peakStar90=${"%.4f".format(peakStar90Share)}" +
                 "|peakStar95=${"%.4f".format(peakStar95Share)}" +
+                "|matureAvgStar90=${"%.4f".format(matureAverageStar90Share)}" +
+                "|maturePeakStar90=${"%.4f".format(maturePeakStar90Share)}" +
                 "|avgRoster=${"%.2f".format(averageRoster)}" +
                 "|minRoster=$minimumRoster" +
                 "|maxRoster=$maximumRoster" +
@@ -144,7 +149,7 @@ class LeagueBalanceAuditTest {
         )
 
         // Hard ecosystem guardrails. These are intentionally broad enough to permit natural
-        // variation while still catching structural imbalance or roster collapse.
+        // variation while still catching structural imbalance, roster collapse or star extinction.
         assertTrue("CPU franchise dropped below a playable five-man roster", minimumRoster >= 5)
         assertTrue("CPU franchise exceeded supported roster size", maximumRoster <= 18)
         assertTrue("average CPU roster size is structurally too small or too large", averageRoster in 7.0..15.0)
@@ -152,11 +157,13 @@ class LeagueBalanceAuditTest {
         assertTrue("talent distribution between CPU franchises became excessively uneven", peakSpread <= 18.0)
         assertTrue("CPU league became saturated with 90+ OVR players", peakStar90Share <= 0.35)
         assertTrue("CPU league became saturated with 95+ OVR players", peakStar95Share <= 0.15)
+        assertTrue("90+ talent pipeline disappeared after the initial stars aged out", maturePeakStar90Share > 0.0)
+        assertTrue("90+ talent pipeline is too sparse to sustain league stars", matureAverageStar90Share >= 0.002)
         assertTrue("free-agent market exceeded the configured cap", maximumFreeAgents <= FreeAgencyRules.MAX_MARKET_SIZE)
         assertTrue("annual CPU roster churn is implausibly low", averageTurnover >= 0.05)
-        assertTrue("annual CPU roster churn is implausibly high", averageTurnover <= 0.50)
-        assertTrue("CPU trade engine exceeded its six-trade offseason cap", totalTrades <= 600)
-        assertTrue("CPU free-agency engine exceeded its per-team signing cap", totalFreeAgentSignings <= cpuTeamCount * 2 * 100)
+        assertTrue("annual CPU roster churn is implausibly high", averageTurnover <= 0.40)
+        assertTrue("CPU trade engine exceeded its three-trade offseason cap", totalTrades <= 300)
+        assertTrue("CPU free-agency engine exceeded its one-signing-per-team cap", totalFreeAgentSignings <= cpuTeamCount * 100)
         assertEquals("every CPU franchise should receive exactly one draft pick per offseason", cpuTeamCount * 100, totalDraftPicks)
     }
 
