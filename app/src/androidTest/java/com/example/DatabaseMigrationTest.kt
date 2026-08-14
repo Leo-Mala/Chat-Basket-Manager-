@@ -38,22 +38,25 @@ class DatabaseMigrationTest {
     }
 
     private fun createVersion2Schema(db: SupportSQLiteDatabase) {
-        // Version 1 predates the normalized tables. MIGRATION_1_2 is deliberately
-        // CREATE TABLE IF NOT EXISTS based, so applying it to a fresh v1 database
-        // reproduces the normalized version-2 schema without fabricated Room JSON.
         BasketDatabase.MIGRATION_1_2.migrate(db)
     }
 
+    private fun createLegacyGameStateTable(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS game_state (id INTEGER NOT NULL PRIMARY KEY)")
+    }
+
     @Test
-    fun realMigrations2To5PreserveDataAndCreateRequiredSchema() =
+    fun realMigrations2To6PreserveDataAndCreateRequiredSchema() =
         withFreshDatabase("migration-test") { db ->
             createVersion2Schema(db)
+            createLegacyGameStateTable(db)
             db.execSQL("INSERT INTO teams VALUES ('T1','Test','Test','T1','East','Arena','Test',10000,2020)")
             db.execSQL("INSERT INTO seasons VALUES (1,0,0,1,10,2025,'T1')")
 
             BasketDatabase.MIGRATION_2_3.migrate(db)
             BasketDatabase.MIGRATION_3_4.migrate(db)
             BasketDatabase.MIGRATION_4_5.migrate(db)
+            BasketDatabase.MIGRATION_5_6.migrate(db)
 
             db.query("SELECT name FROM teams WHERE id = 'T1'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
@@ -68,6 +71,12 @@ class DatabaseMigrationTest {
             }
             db.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'index_contracts_teamId'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
+            }
+            db.query("PRAGMA table_info(game_state)").use { cursor ->
+                val nameIndex = cursor.getColumnIndexOrThrow("name")
+                var found = false
+                while (cursor.moveToNext()) if (cursor.getString(nameIndex) == "playoffResultJson") found = true
+                assertTrue("Missing game_state.playoffResultJson after migration 5->6", found)
             }
         }
 
@@ -96,12 +105,14 @@ class DatabaseMigrationTest {
         }
 
     @Test
-    fun realMigrations1To5CreateCurrentSchema() =
-        withFreshDatabase("migration-1-5-test") { db ->
+    fun realMigrations1To6CreateCurrentSchema() =
+        withFreshDatabase("migration-1-6-test") { db ->
+            createLegacyGameStateTable(db)
             BasketDatabase.MIGRATION_1_2.migrate(db)
             BasketDatabase.MIGRATION_2_3.migrate(db)
             BasketDatabase.MIGRATION_3_4.migrate(db)
             BasketDatabase.MIGRATION_4_5.migrate(db)
+            BasketDatabase.MIGRATION_5_6.migrate(db)
 
             db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'contracts'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
@@ -119,6 +130,17 @@ class DatabaseMigrationTest {
                     }
                 }
                 assertTrue("Missing seasons.nextPlayerId after migration 4->5", foundNextPlayerId)
+            }
+            db.query("PRAGMA table_info(game_state)").use { cursor ->
+                val nameIndex = cursor.getColumnIndexOrThrow("name")
+                var foundPlayoffResult = false
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(nameIndex) == "playoffResultJson") {
+                        foundPlayoffResult = true
+                        break
+                    }
+                }
+                assertTrue("Missing game_state.playoffResultJson after migration 5->6", foundPlayoffResult)
             }
         }
 }
