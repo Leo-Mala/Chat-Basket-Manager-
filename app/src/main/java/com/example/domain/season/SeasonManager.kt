@@ -1,5 +1,6 @@
 package com.example.domain.season
 
+import com.example.domain.rules.SeasonRules
 import com.example.models.*
 
 class SeasonManager {
@@ -113,5 +114,38 @@ class SeasonManager {
         return (if (home) matchup.second else matchup.first) to home
     }
 
-    fun advanceSeason(season: Season): Season = season.advanceSeason()
+    /**
+     * Advances age, development, retirement and season metadata.
+     *
+     * The legacy direct Season.advanceSeason() path still replenishes rosters by default. The
+     * coordinated OffseasonManager path disables that fallback so vacancies are handled by
+     * explicit free agency and draft systems instead of a second hidden rookie generator.
+     */
+    fun advanceSeason(season: Season, replenishRosters: Boolean = true): Season {
+        if (replenishRosters) return season.advanceSeason()
+
+        val newTeams = season.teams.map { team ->
+            val keptPlayers = team.players
+                .onEach { player ->
+                    player.advanceSeason()
+                    player.injured = false
+                    player.injuryDays = 0
+                    player.resetSeasonStats()
+                }
+                .filter { it.age <= SeasonRules.MAX_PLAYER_AGE }
+            team.copy(players = keptPlayers)
+        }
+
+        return Season(
+            teams = newTeams,
+            currentDay = 0,
+            gamesPlayed = 0,
+            seasonNumber = season.seasonNumber + 1,
+            currentMonth = 10,
+            currentYear = 2025 + season.seasonNumber,
+            nextPlayerId = season.nextPlayerId
+        ).apply {
+            userTeamName = season.userTeamName
+        }
+    }
 }
