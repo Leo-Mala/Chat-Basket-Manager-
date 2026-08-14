@@ -6,6 +6,7 @@ import com.example.domain.draft.DraftManager
 import com.example.domain.roster.AiRosterManager
 import com.example.domain.rules.FreeAgencyRules
 import com.example.domain.rules.SeasonRules
+import com.example.domain.trade.AiTradeManager
 import com.example.models.NbaTeam
 import com.example.models.Player
 import com.example.models.PlayerContract
@@ -20,7 +21,8 @@ class OffseasonManager(
     private val seasonManager: SeasonManager = SeasonManager(),
     private val aiRosterManager: AiRosterManager = AiRosterManager(),
     private val draftManager: DraftManager = DraftManager(),
-    private val aiDraftManager: AiDraftManager = AiDraftManager(draftManager)
+    private val aiDraftManager: AiDraftManager = AiDraftManager(draftManager),
+    private val aiTradeManager: AiTradeManager = AiTradeManager()
 ) {
     data class Result(
         val season: Season,
@@ -68,6 +70,18 @@ class OffseasonManager(
         val agedExpiredPlayers = ageMarket(expiredPlayers)
 
         val advanced = seasonManager.advanceSeason(currentSeason)
+
+        // CPU-to-CPU trades happen before free agency and the draft. Only continuing players
+        // with active, tradeable contracts are eligible, which automatically excludes fresh
+        // rookies and prevents the user-controlled team from being changed by the CPU market.
+        val aiTradeResult = aiTradeManager.rebalance(
+            teams = advanced.teams,
+            contracts = contractResult.contracts,
+            userTeamName = advanced.userTeamName,
+            priorityTeamNames = priorityTeamNames
+        )
+        advanced.teams = aiTradeResult.teams
+
         val aiFreeAgencyResult = aiRosterManager.rebalance(
             teams = advanced.teams,
             freeAgents = agedExistingFreeAgents,
