@@ -20,7 +20,12 @@ object ContractRules {
         return (performance * ageFactor).roundToLong().coerceAtLeast(250_000L)
     }
 
-    fun annualSalary(player: Player): Long = (marketValue(player) * 0.085).roundToLong().coerceAtLeast(1_000_000L)
+    fun annualSalary(player: Player): Long =
+        (marketValue(player) * 0.085).roundToLong().coerceAtLeast(1_000_000L)
+
+    /** One-time cash cost paid when a free-agent contract is signed. */
+    fun signingBonus(player: Player): Long =
+        (annualSalary(player) * 0.10).roundToLong().coerceAtLeast(100_000L)
 
     fun canSign(rosterSize: Int): Boolean = rosterSize < MAX_ROSTER
     fun mustReleaseForStandardRoster(rosterSize: Int): Boolean = rosterSize >= STANDARD_ROSTER
