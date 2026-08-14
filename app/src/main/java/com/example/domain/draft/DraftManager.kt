@@ -1,5 +1,6 @@
 package com.example.domain.draft
 
+import com.example.domain.rules.FreeAgencyRules
 import com.example.domain.rules.PlayerGenerationRules
 import com.example.models.*
 
@@ -33,7 +34,7 @@ class DraftManager {
         require(rookie.age in 18..22) { "Rookie fora da faixa etária do Draft" }
         val players = team.players.toMutableList()
         if (players.any { it.id == rookie.id }) return DraftResult(team, null)
-        val released = if (players.size >= maxRosterSize) players.minByOrNull { it.overall } else null
+        val released = if (players.size >= maxRosterSize) FreeAgencyRules.releaseCandidate(players) else null
         released?.let { players.remove(it) }
         players += rookie
         return DraftResult(team.copy(players = players), released)
