@@ -38,16 +38,16 @@ class RosterManager {
 
     fun signFreeAgent(team: NbaTeam, finance: Finance, player: Player, day: Int): SigningResult? {
         if (!FreeAgencyRules.validateCandidate(player)) return null
-        val cost = ContractRules.annualSalary(player).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        if (finance.budget < cost) return null
+        val signingBonus = ContractRules.signingBonus(player).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        if (finance.budget < signingBonus) return null
         val players = team.players.toMutableList()
         if (!ContractRules.canSign(players.size)) return null
         val released = if (ContractRules.mustReleaseForStandardRoster(players.size)) FreeAgencyRules.releaseCandidate(players) else null
         released?.let { players.remove(it) }
         players += player
         val updatedFinance = finance.copy(
-            budget = finance.budget - cost,
-            expenses = (finance.expenses + Expense("Contratação: ${player.name}", cost, "Dia $day")).toMutableList()
+            budget = finance.budget - signingBonus,
+            expenses = (finance.expenses + Expense("Bônus de assinatura: ${player.name}", signingBonus, "Dia $day")).toMutableList()
         )
         return SigningResult(team.copy(players = players), updatedFinance, released)
     }
