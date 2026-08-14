@@ -28,7 +28,11 @@ class GameStateRepository(
     private val gson: Gson = GsonBuilder().enableComplexMapKeySerialization().create()
 
     suspend fun load(): GameStateSnapshot? = withContext(Dispatchers.IO) {
-        if (db.teamDao().all().isNotEmpty() && db.seasonDao().all().isNotEmpty()) {
+        val teams = db.teamDao().all()
+        val seasons = db.seasonDao().all()
+        if (teams.isNotEmpty() || seasons.isNotEmpty()) {
+            check(teams.isNotEmpty() && seasons.isNotEmpty()) { "Incomplete normalized save: teams/seasons mismatch" }
+            validateNormalizedCore(teams, seasons)
             normalizedSnapshot()
         } else {
             val legacy = db.gameStateDao().get()?.let { GameStateSnapshot.fromEntity(it) } ?: migrateLegacyPreferences()
@@ -144,6 +148,14 @@ class GameStateRepository(
         season?.let { s ->
             val sid = s.seasonNumber
             db.seasonDao().upsert(s.toEntity())
+
+            // A save is an authoritative snapshot of the current season. Remove any
+            // previously persisted rows for this season before rebuilding them so a
+            // shorter/rolled-back snapshot cannot resurrect stale games or standings.
+            db.playerGameStatDao().deleteForSeason(sid)
+            db.gameInjuryDao().deleteForSeason(sid)
+            db.gameDao().deleteForSeason(sid)
+            db.standingDao().deleteForSeason(sid)
             db.standingDao().upsertAll(s.standings.mapNotNull { (name, r) ->
                 val id = allTeams.firstOrNull { it.name == name }?.let(::teamId) ?: return@mapNotNull null
                 StandingEntity(sid, id, r.wins, r.losses, r.gamesPlayed, r.totalPointsScored, r.totalPointsConceded)
@@ -166,15 +178,46 @@ class GameStateRepository(
             db.gameInjuryDao().upsertAll(injuries)
         }
 
+        val awardSeason = season?.seasonNumber ?: 1
+        db.awardDao().deleteForSeason(awardSeason)
         awards?.let { a ->
-            val sid = season?.seasonNumber ?: 1
-            db.awardDao().upsert(AwardEntity(sid, a.mvp.id, a.defensivePlayer.id, a.sixthMan.id, a.rookieOfYear.id, a.mostImproved.id, a.coachOfYearName, a.coachOfYearTeam))
+            db.awardDao().upsert(AwardEntity(awardSeason, a.mvp.id, a.defensivePlayer.id, a.sixthMan.id, a.rookieOfYear.id, a.mostImproved.id, a.coachOfYearName, a.coachOfYearTeam))
         }
 
         history?.let { h ->
+            // HistoryManager is also an authoritative snapshot. Clear first so removed
+            // or corrected historical rows cannot survive a later save.
+            db.seasonHistoryPlayerDao().clear()
+            db.seasonHistoryTeamWinDao().clear()
+            db.seasonHistoryDao().clear()
             db.seasonHistoryDao().upsertAll(h.seasons.map { it.toEntity() })
             db.seasonHistoryTeamWinDao().upsertAll(h.seasons.flatMap { item -> item.teamWins.map { (team, wins) -> SeasonHistoryTeamWinEntity(item.seasonNumber, team, wins) } })
             db.seasonHistoryPlayerDao().upsertAll(h.seasons.flatMap { item -> item.playerStats.map { it.toHistoryEntity(item.seasonNumber) } })
+        }
+    }
+
+    private suspend fun validateNormalizedCore(teams: List<TeamEntity>, seasons: List<SeasonEntity>) {
+        val current = seasons.maxByOrNull { it.seasonNumber }
+            ?: error("Incomplete normalized save: missing current season")
+        val teamIds = teams.map { it.id }.toSet()
+        check(current.userTeamId == null || current.userTeamId in teamIds) {
+            "Incomplete normalized save: managed team is missing"
+        }
+
+        val activePlayers = db.playerDao().all().filter { it.active }
+        check(activePlayers.filter { it.teamId != null }.all { it.teamId in teamIds }) {
+            "Incomplete normalized save: active player references a missing team"
+        }
+
+        val standings = db.standingDao().all().filter { it.seasonId == current.id }
+        check(standings.size == teams.size && standings.map { it.teamId }.toSet() == teamIds) {
+            "Incomplete normalized save: current standings do not cover every team"
+        }
+
+        val rosterIds = activePlayers.filter { it.teamId != null }.map { it.id }.toSet()
+        val contractIds = db.contractDao().all().map { it.playerId }.toSet()
+        check(rosterIds.all { it in contractIds }) {
+            "Incomplete normalized save: roster player is missing a contract"
         }
     }
 
