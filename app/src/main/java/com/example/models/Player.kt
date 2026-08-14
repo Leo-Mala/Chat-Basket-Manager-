@@ -135,7 +135,7 @@ data class Player(
                 }
                 age <= peakAge -> {
                     val technical = listOf("shooting", "passing", "defense")
-                    if (random.nextInt(100) < growthChance(12)) {
+                    if (random.nextInt(100) < growthChance(28)) {
                         boostAttribute(technical[random.nextInt(technical.size)], 1)
                     }
                 }
@@ -183,7 +183,7 @@ data class Player(
             }
             age <= peakAge -> {
                 val technical = listOf("shooting", "passing", "defense")
-                if (random.nextInt(100) < growthChance(15)) {
+                if (random.nextInt(100) < growthChance(30)) {
                     boostAttribute(technical[random.nextInt(technical.size)], 1)
                 }
             }
