@@ -77,7 +77,9 @@ class OffseasonManager(
         val agedExistingFreeAgents = ageMarket(currentFreeAgents)
         val agedExpiredPlayers = ageMarket(expiredPlayers)
 
-        val advanced = seasonManager.advanceSeason(currentSeason)
+        // The coordinated offseason owns roster construction. Advance development/retirement
+        // without the legacy hidden rookie replenishment, then let market systems fill vacancies.
+        val advanced = seasonManager.advanceSeason(currentSeason, replenishRosters = false)
 
         // CPU-to-CPU trades happen before free agency and the draft. Keep this deliberately
         // conservative: only a small part of the league should reshuffle via trades each year.
@@ -91,15 +93,16 @@ class OffseasonManager(
         )
         advanced.teams = aiTradeResult.teams
 
-        // Free agency supplements a CPU roster rather than rebuilding half of it every summer.
-        // One clear upgrade per team, with a six-point OVR floor, keeps movement meaningful.
+        // Free agency first repairs real vacancies caused by contracts/retirement. No additional
+        // production upgrade is forced every summer; draft and trades already provide improvement.
         val aiFreeAgencyResult = aiRosterManager.rebalance(
             teams = advanced.teams,
             freeAgents = agedExistingFreeAgents,
             userTeamName = advanced.userTeamName,
             priorityTeamNames = priorityTeamNames,
-            maxUpgradesPerTeam = 1,
-            minimumUpgrade = 6
+            maxUpgradesPerTeam = 0,
+            minimumUpgrade = 6,
+            minimumRosterSize = 12
         )
         advanced.teams = aiFreeAgencyResult.teams
 
