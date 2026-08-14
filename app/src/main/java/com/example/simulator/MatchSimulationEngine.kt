@@ -1,6 +1,7 @@
 package com.example.simulator
 
 import com.example.models.Player
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -54,7 +55,9 @@ class MatchSimulationEngine(
         )
 
         val pointWeights = rotation.map {
-            val usage = offensiveUsage(it)
+            // NBA scoring is intentionally star-driven rather than nearly uniform across ten players.
+            // A nonlinear usage curve preserves bench scoring while creating realistic first options.
+            val usage = offensiveUsage(it).pow(4.5)
             usage * (0.82 + random.nextDouble() * 0.36)
         }
         val points = allocateTotal(
@@ -76,7 +79,6 @@ class MatchSimulationEngine(
             .coerceIn(7, 20)
         val foulTotal = (19 + random.nextInt(-4, 5)).coerceIn(12, 28)
 
-        // Use mapIndexed instead of rotation.indexOf(it) to avoid repeated O(n) lookups.
         val reboundWeights = rotation.mapIndexed { index, player -> player.rebound * (minutes[index].coerceAtLeast(1) + 4.0) }
         val assistWeights = rotation.mapIndexed { index, player -> player.passing * (minutes[index].coerceAtLeast(1) + 2.0) }
         val stealWeights = rotation.mapIndexed { index, player -> player.defense * (minutes[index].coerceAtLeast(1) + 2.0) }
@@ -143,11 +145,7 @@ class MatchSimulationEngine(
         var ftMade = (points * ftRate + random.nextDouble(-0.7, 1.0)).roundToInt().coerceIn(0, remaining)
         remaining -= ftMade
 
-        // Remaining points must be scored by 2-point field goals. If the remainder is odd,
-        // convert one free throw/three-pointer choice so the identity always closes exactly.
         if (remaining % 2 != 0) {
-            // Every odd remainder must contain at least one free throw.
-            // This also fixes the 1-point player-line edge case.
             if (ftMade > 0) {
                 ftMade--
                 remaining++
@@ -162,15 +160,14 @@ class MatchSimulationEngine(
         val twoMade = remaining / 2
         val fgMade = twoMade + threeMade
 
-        val twoAtt = if (twoMade == 0) 0 else {
-            (twoMade / (0.43 + player.shooting / 500.0)).roundToInt().coerceAtLeast(twoMade)
-        }
-        val threeAtt = if (threeMade == 0) 0 else {
-            (threeMade / (0.31 + player.shooting / 500.0)).roundToInt().coerceAtLeast(threeMade)
-        }
-        val ftAtt = if (ftMade == 0) 0 else {
-            (ftMade / 0.78).roundToInt().coerceAtLeast(ftMade)
-        }
+        // Attribute-driven efficiencies calibrated to realistic team-level shooting bands.
+        val twoPointPct = (0.49 + (player.shooting - 50) / 500.0).coerceIn(0.48, 0.60)
+        val threePointPct = (0.31 + (player.shooting - 50) / 700.0).coerceIn(0.30, 0.42)
+        val freeThrowPct = (0.72 + (player.shooting - 50) / 500.0).coerceIn(0.70, 0.90)
+
+        val twoAtt = if (twoMade == 0) 0 else (twoMade / twoPointPct).roundToInt().coerceAtLeast(twoMade)
+        val threeAtt = if (threeMade == 0) 0 else (threeMade / threePointPct).roundToInt().coerceAtLeast(threeMade)
+        val ftAtt = if (ftMade == 0) 0 else (ftMade / freeThrowPct).roundToInt().coerceAtLeast(ftMade)
 
         return ShotLine(
             fgMade = fgMade,
@@ -182,14 +179,11 @@ class MatchSimulationEngine(
         )
     }
 
-    private fun chooseRotation(players: List<Player>): List<Player> {
-        // Use at most 10 players for a realistic rotation, while keeping at least one player
-        // at each available position when possible.
-        return players.sortedWith(
+    private fun chooseRotation(players: List<Player>): List<Player> =
+        players.sortedWith(
             compareByDescending<Player> { it.overall }
                 .thenByDescending { it.athleticism }
         ).take(10.coerceAtMost(players.size))
-    }
 
     private fun playingTimeWeight(player: Player): Double =
         (player.overall * 1.4 + player.athleticism * 0.35 + player.defense * 0.25).coerceAtLeast(1.0)
