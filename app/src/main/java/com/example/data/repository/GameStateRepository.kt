@@ -72,7 +72,7 @@ class GameStateRepository(
     suspend fun clear() = withContext(Dispatchers.IO) {
         db.withTransaction {
             db.gameStateDao().clear()
-            db.teamDao().clear(); db.playerDao().deleteAll(); db.coachDao().clear(); db.financeDao().clear(); db.tacticsDao().clear()
+            db.teamDao().clear(); db.playerDao().clear(); db.coachDao().clear(); db.financeDao().clear(); db.tacticsDao().clear()
             db.seasonDao().clear(); db.standingDao().clear(); db.gameDao().clear(); db.playerGameStatDao().clear(); db.gameInjuryDao().clear()
             db.awardDao().clear(); db.seasonHistoryDao().clear(); db.seasonHistoryTeamWinDao().clear(); db.seasonHistoryPlayerDao().clear()
             db.sponsorDao().clear(); db.expenseDao().clear(); db.contractDao().clear()

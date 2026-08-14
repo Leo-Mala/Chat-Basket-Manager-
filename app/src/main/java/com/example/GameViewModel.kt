@@ -185,16 +185,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun simulationConfig(): com.example.simulator.SimulationConfig =
-        com.example.simulator.SimulationConfig(
-            difficulty = difficulty,
-            injuriesEnabled = injuriesEnabled,
-            coach = coach,
-            tactics = tactics ?: Tactics(),
-            managedTeam = managedTeam,
-            finance = finances ?: Finance()
-        )
-
     private fun getInitialBudget(team: NbaTeam): Int = financeManager.initialBudget(team.name)
 
 
