@@ -15,6 +15,7 @@ import com.example.domain.draft.DraftManager
 import com.example.domain.finance.FinanceManager
 import com.example.domain.contract.ContractManager
 import com.example.domain.contract.ContractOffer
+import com.example.domain.rules.ContractRules
 import com.example.domain.playoff.PlayoffManager
 import com.example.domain.roster.RosterManager
 import com.example.domain.season.SeasonManager
@@ -665,7 +666,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun executePlayerTrade(myPlayer: Player, offeredPlayer: Player) {
         val currentSeason = season ?: return
         val team = managedTeam ?: return
-        val result = tradeManager.execute(currentSeason, team, myPlayer, offeredPlayer, contracts[myPlayer.id]) ?: return
+        val result = tradeManager.execute(
+            currentSeason, team, myPlayer, offeredPlayer,
+            contracts[myPlayer.id], contracts[offeredPlayer.id]
+        ) ?: return
         managedTeam = result.userTeam
         currentSeason.teams = result.updatedLeague
         val myTeamId = result.userTeam.abbreviation
@@ -734,7 +738,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     result = realResult,
                     isHome = isHome,
                     day = currentSeason.currentDay,
-                    ticketPriceOverride = financeAdvanced.ticketPrice
+                    ticketPriceOverride = financeAdvanced.ticketPrice,
+                    annualPlayerPayroll = currentManaged.players.sumOf { player ->
+                        contracts[player.id]?.salary ?: player.calculateSalary().toLong()
+                    }
                 )
             }
 
@@ -823,7 +830,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     result = realResult,
                     isHome = isHome,
                     day = currentSeason.currentDay,
-                    ticketPriceOverride = financeAdvanced.ticketPrice
+                    ticketPriceOverride = financeAdvanced.ticketPrice,
+                    annualPlayerPayroll = currentManaged.players.sumOf { player ->
+                        contracts[player.id]?.salary ?: player.calculateSalary().toLong()
+                    }
                 )
             }
 
@@ -950,8 +960,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val f = finances ?: return false
         val result = rosterManager.signFreeAgent(team, f, selectedPlayer, season?.currentDay ?: 1)
         if (result == null) {
-            val cost = selectedPlayer.overall * 120000
-            ToastUtils.showToast(context, "Orçamento insuficiente! Custo: $${cost / 1000000.0}M", Toast.LENGTH_LONG)
+            val cost = ContractRules.signingBonus(selectedPlayer)
+            ToastUtils.showToast(context, "Contratação indisponível. Bônus de assinatura necessário: $${cost / 1000000.0}M", Toast.LENGTH_LONG)
             return false
         }
         managedTeam = result.team

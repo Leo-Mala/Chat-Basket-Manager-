@@ -20,7 +20,8 @@ class FinanceManager {
         result: com.example.simulator.GameSimulator.GameResult,
         isHome: Boolean,
         day: Int,
-        ticketPriceOverride: Int = 0
+        ticketPriceOverride: Int = 0,
+        annualPlayerPayroll: Long? = null
     ): Finance {
         val ticketPrice = if (ticketPriceOverride > 0) ticketPriceOverride else when (team.name) {
             "Los Angeles Lakers", "Golden State Warriors", "New York Knicks" -> 120
@@ -39,10 +40,11 @@ class FinanceManager {
         budget += sponsorRevenue
         expenses += Expense("Receita de Patrocínio", sponsorRevenue, "Dia $day")
 
-        val tvMerch = (85_000_000 + 20_000_000) / 82
-        budget += tvMerch
-
-        val playerSalaries = team.players.sumOf { it.calculateSalary() / 82 }
+        // TV rights are credited once at the offseason transition. Do not credit them
+        // again game-by-game or the same league revenue is counted twice.
+        val annualPayroll = annualPlayerPayroll
+            ?: team.players.sumOf { it.calculateSalary().toLong() }
+        val playerSalaries = (annualPayroll / 82L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         budget -= playerSalaries
         expenses += Expense("Salários dos Jogadores", playerSalaries, "Dia $day")
 

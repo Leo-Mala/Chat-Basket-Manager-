@@ -24,11 +24,16 @@ class ContractManager {
     fun evaluate(player: Player, offer: ContractOffer): ContractEvaluation {
         val fair = ContractRules.annualSalary(player)
         val minimum = (fair * 0.82).toLong()
-        if (offer.salary >= fair && offer.years in 1..5) {
-            return ContractEvaluation(true, null, "Oferta acima do valor de mercado")
+        if (offer.salary >= minimum && offer.years in 1..5) {
+            val reason = if (offer.salary >= fair) {
+                "Oferta em ou acima do valor de mercado"
+            } else {
+                "Oferta dentro da faixa aceitável"
+            }
+            return ContractEvaluation(true, null, reason)
         }
         val counter = ContractOffer(fair, offer.years.coerceIn(1, 5), offer.playerOption, offer.noTrade)
-        return ContractEvaluation(false, counter, "Oferta abaixo do valor de mercado; mínimo aproximado: $minimum")
+        return ContractEvaluation(false, counter, "Oferta abaixo do mínimo aproximado: $minimum")
     }
 
     fun create(player: Player, teamId: String, offer: ContractOffer): PlayerContract {
