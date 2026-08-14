@@ -2,7 +2,6 @@ package com.example.domain.trade
 
 import com.example.models.*
 import com.example.domain.rules.TradeRules
-import kotlin.random.Random
 
 data class TradeProposal(val offeredPlayer: Player, val teamName: String)
 data class TradeResult(val userTeam: NbaTeam, val updatedLeague: List<NbaTeam>)
@@ -17,9 +16,16 @@ class TradeManager {
         return TradeProposal(selected.first, selected.second)
     }
 
-    fun execute(season: Season, managedTeam: NbaTeam, myPlayer: Player, offeredPlayer: Player, outgoingContract: PlayerContract? = null): TradeResult? {
+    fun execute(
+        season: Season,
+        managedTeam: NbaTeam,
+        myPlayer: Player,
+        offeredPlayer: Player,
+        outgoingContract: PlayerContract? = null,
+        incomingContract: PlayerContract? = null
+    ): TradeResult? {
         val opponent = season.teams.firstOrNull { it.players.any { p -> p.id == offeredPlayer.id } } ?: return null
-        if (outgoingContract?.noTrade == true) return null
+        if (outgoingContract?.noTrade == true || incomingContract?.noTrade == true) return null
         if (!TradeRules.canTrade(managedTeam, opponent, myPlayer, offeredPlayer)) return null
         val userPlayers = managedTeam.players.map { if (it.id == myPlayer.id) offeredPlayer else it }
         val updatedUser = managedTeam.copy(players = userPlayers)
