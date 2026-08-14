@@ -79,22 +79,27 @@ class OffseasonManager(
 
         val advanced = seasonManager.advanceSeason(currentSeason)
 
-        // CPU-to-CPU trades happen before free agency and the draft. Only continuing players
-        // with active, tradeable contracts are eligible, which automatically excludes fresh
-        // rookies and prevents the user-controlled team from being changed by the CPU market.
+        // CPU-to-CPU trades happen before free agency and the draft. Keep this deliberately
+        // conservative: only a small part of the league should reshuffle via trades each year.
         val aiTradeResult = aiTradeManager.rebalance(
             teams = advanced.teams,
             contracts = contractResult.contracts,
             userTeamName = advanced.userTeamName,
-            priorityTeamNames = priorityTeamNames
+            priorityTeamNames = priorityTeamNames,
+            maxTrades = 3,
+            minimumBalanceGain = 2
         )
         advanced.teams = aiTradeResult.teams
 
+        // Free agency supplements a CPU roster rather than rebuilding half of it every summer.
+        // One clear upgrade per team, with a six-point OVR floor, keeps movement meaningful.
         val aiFreeAgencyResult = aiRosterManager.rebalance(
             teams = advanced.teams,
             freeAgents = agedExistingFreeAgents,
             userTeamName = advanced.userTeamName,
-            priorityTeamNames = priorityTeamNames
+            priorityTeamNames = priorityTeamNames,
+            maxUpgradesPerTeam = 1,
+            minimumUpgrade = 6
         )
         advanced.teams = aiFreeAgencyResult.teams
 
