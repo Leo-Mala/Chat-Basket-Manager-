@@ -1,6 +1,8 @@
 package com.example.domain.season
 
 import com.example.domain.contract.ContractManager
+import com.example.domain.draft.AiDraftManager
+import com.example.domain.draft.DraftManager
 import com.example.domain.roster.AiRosterManager
 import com.example.domain.rules.FreeAgencyRules
 import com.example.domain.rules.SeasonRules
@@ -16,7 +18,9 @@ import com.example.models.Season
 class OffseasonManager(
     private val contractManager: ContractManager = ContractManager(),
     private val seasonManager: SeasonManager = SeasonManager(),
-    private val aiRosterManager: AiRosterManager = AiRosterManager()
+    private val aiRosterManager: AiRosterManager = AiRosterManager(),
+    private val draftManager: DraftManager = DraftManager(),
+    private val aiDraftManager: AiDraftManager = AiDraftManager(draftManager)
 ) {
     data class Result(
         val season: Season,
@@ -64,13 +68,31 @@ class OffseasonManager(
         val agedExpiredPlayers = ageMarket(expiredPlayers)
 
         val advanced = seasonManager.advanceSeason(currentSeason)
-        val aiResult = aiRosterManager.rebalance(
+        val aiFreeAgencyResult = aiRosterManager.rebalance(
             teams = advanced.teams,
             freeAgents = agedExistingFreeAgents,
             userTeamName = advanced.userTeamName,
             priorityTeamNames = priorityTeamNames
         )
-        advanced.teams = aiResult.teams
+        advanced.teams = aiFreeAgencyResult.teams
+
+        // Every CPU franchise receives one draft opportunity. The class is generated only
+        // after the season transition, so these rookies begin their first season at age 19
+        // without receiving an artificial year of progression. Worst records pick first.
+        val cpuTeamCount = advanced.teams.count { it.name != advanced.userTeamName }
+        val cpuDraftClass = draftManager.generateClass(
+            season = advanced,
+            freeAgents = aiFreeAgencyResult.freeAgents,
+            scoutingLevel = 1,
+            size = cpuTeamCount
+        )
+        val aiDraftResult = aiDraftManager.draftForCpu(
+            teams = advanced.teams,
+            rookies = cpuDraftClass,
+            userTeamName = advanced.userTeamName,
+            priorityTeamNames = priorityTeamNames
+        )
+        advanced.teams = aiDraftResult.teams
 
         val nextContracts = contractResult.contracts.toMutableMap()
         advanced.teams.forEach { team ->
@@ -94,7 +116,12 @@ class OffseasonManager(
         return Result(
             season = advanced,
             contracts = nextContracts,
-            freeAgents = FreeAgencyRules.normalizeMarket(aiResult.freeAgents + agedExpiredPlayers)
+            freeAgents = FreeAgencyRules.normalizeMarket(
+                aiFreeAgencyResult.freeAgents +
+                    agedExpiredPlayers +
+                    aiDraftResult.releasedPlayers +
+                    aiDraftResult.undraftedRookies
+            )
         )
     }
 }
