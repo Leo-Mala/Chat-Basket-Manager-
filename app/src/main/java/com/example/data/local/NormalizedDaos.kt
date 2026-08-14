@@ -51,6 +51,7 @@ interface SeasonDao {
 interface StandingDao {
     @Query("SELECT * FROM standings ORDER BY seasonId, teamId") suspend fun all(): List<StandingEntity>
     @Upsert suspend fun upsertAll(items: List<StandingEntity>)
+    @Query("DELETE FROM standings WHERE seasonId = :seasonId") suspend fun deleteForSeason(seasonId: Int)
     @Query("DELETE FROM standings") suspend fun clear()
 }
 
@@ -58,6 +59,7 @@ interface StandingDao {
 interface GameDao {
     @Query("SELECT * FROM games ORDER BY seasonId, id") suspend fun all(): List<GameEntity>
     @Upsert suspend fun upsertAll(items: List<GameEntity>)
+    @Query("DELETE FROM games WHERE seasonId = :seasonId") suspend fun deleteForSeason(seasonId: Int)
     @Query("DELETE FROM games") suspend fun clear()
 }
 
@@ -65,6 +67,7 @@ interface GameDao {
 interface PlayerGameStatDao {
     @Query("SELECT * FROM player_game_stats ORDER BY gameId, playerId") suspend fun all(): List<PlayerGameStatEntity>
     @Upsert suspend fun upsertAll(items: List<PlayerGameStatEntity>)
+    @Query("DELETE FROM player_game_stats WHERE gameId IN (SELECT id FROM games WHERE seasonId = :seasonId)") suspend fun deleteForSeason(seasonId: Int)
     @Query("DELETE FROM player_game_stats") suspend fun clear()
 }
 
@@ -72,6 +75,7 @@ interface PlayerGameStatDao {
 interface GameInjuryDao {
     @Query("SELECT * FROM game_injuries ORDER BY gameId, playerId") suspend fun all(): List<GameInjuryEntity>
     @Upsert suspend fun upsertAll(items: List<GameInjuryEntity>)
+    @Query("DELETE FROM game_injuries WHERE gameId IN (SELECT id FROM games WHERE seasonId = :seasonId)") suspend fun deleteForSeason(seasonId: Int)
     @Query("DELETE FROM game_injuries") suspend fun clear()
 }
 
@@ -79,6 +83,7 @@ interface GameInjuryDao {
 interface AwardDao {
     @Query("SELECT * FROM awards ORDER BY seasonId") suspend fun all(): List<AwardEntity>
     @Upsert suspend fun upsert(item: AwardEntity)
+    @Query("DELETE FROM awards WHERE seasonId = :seasonId") suspend fun deleteForSeason(seasonId: Int)
     @Query("DELETE FROM awards") suspend fun clear()
 }
 
