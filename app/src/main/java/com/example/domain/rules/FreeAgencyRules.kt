@@ -6,7 +6,11 @@ object FreeAgencyRules {
     const val MAX_MARKET_SIZE = 180
 
     fun releaseCandidate(players: List<Player>): Player? =
-        players.minWithOrNull(compareBy<Player> { it.overall }.thenByDescending { it.age })
+        players.minWithOrNull(
+            compareBy<Player> { it.overall }
+                .thenByDescending { it.age }
+                .thenBy { it.id }
+        )
 
     fun validateCandidate(player: Player): Boolean =
         player.age in 18..40 && player.overall in 40..99
