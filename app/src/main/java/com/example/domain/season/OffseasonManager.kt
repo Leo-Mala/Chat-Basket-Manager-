@@ -39,13 +39,6 @@ class OffseasonManager(
 
         val contractResult = contractManager.advanceSeason(currentContracts.values)
         val expiredIds = contractResult.expiredPlayerIds
-        val userExpiredIds = currentSeason.teams
-            .firstOrNull { it.name == currentSeason.userTeamName }
-            ?.players
-            ?.filter { it.id in expiredIds }
-            ?.map { it.id }
-            ?.toSet()
-            .orEmpty()
         val expiredPlayers = currentSeason.teams
             .flatMap(NbaTeam::players)
             .filter { it.id in expiredIds }
@@ -54,7 +47,7 @@ class OffseasonManager(
             team.copy(players = team.players.filterNot { it.id in expiredIds })
         }
 
-        val agedFreeAgents = (currentFreeAgents + expiredPlayers)
+        fun ageMarket(players: Collection<Player>): List<Player> = players
             .distinctBy { it.id }
             .onEach { player ->
                 player.advanceSeason()
@@ -64,13 +57,18 @@ class OffseasonManager(
             }
             .filter { it.age <= SeasonRules.MAX_PLAYER_AGE }
 
+        // CPU teams act only on the market that already existed before this offseason.
+        // Fresh contract expirations enter free agency after the CPU phase. This preserves
+        // the game's existing contract-expiration phase and avoids instant CPU poaching.
+        val agedExistingFreeAgents = ageMarket(currentFreeAgents)
+        val agedExpiredPlayers = ageMarket(expiredPlayers)
+
         val advanced = seasonManager.advanceSeason(currentSeason)
         val aiResult = aiRosterManager.rebalance(
             teams = advanced.teams,
-            freeAgents = agedFreeAgents,
+            freeAgents = agedExistingFreeAgents,
             userTeamName = advanced.userTeamName,
-            priorityTeamNames = priorityTeamNames,
-            protectedPlayerIds = userExpiredIds
+            priorityTeamNames = priorityTeamNames
         )
         advanced.teams = aiResult.teams
 
@@ -96,7 +94,7 @@ class OffseasonManager(
         return Result(
             season = advanced,
             contracts = nextContracts,
-            freeAgents = FreeAgencyRules.normalizeMarket(aiResult.freeAgents)
+            freeAgents = FreeAgencyRules.normalizeMarket(aiResult.freeAgents + agedExpiredPlayers)
         )
     }
 }
