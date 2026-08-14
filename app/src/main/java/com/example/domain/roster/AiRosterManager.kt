@@ -32,6 +32,10 @@ class AiRosterManager {
 
         val teamByName = teams.associateBy { it.name }.toMutableMap()
         val market = FreeAgencyRules.normalizeMarket(freeAgents).toMutableList()
+        // Only players who entered this CPU free-agency phase are eligible to be signed.
+        // Players released by a CPU team during this phase return to the market, but cannot
+        // trigger a same-window chain of CPU sign/release transactions.
+        val signablePlayerIds = market.map { it.id }.toMutableSet()
         val transactions = mutableListOf<Transaction>()
         val orderedNames = (priorityTeamNames + teams.map { it.name }).distinct()
 
@@ -45,7 +49,8 @@ class AiRosterManager {
                 ) ?: break
 
                 val eligible = market.filter {
-                    it.id !in protectedPlayerIds &&
+                    it.id in signablePlayerIds &&
+                        it.id !in protectedPlayerIds &&
                         FreeAgencyRules.validateCandidate(it) &&
                         it.overall >= weakest.overall + minimumUpgrade
                 }
@@ -67,6 +72,7 @@ class AiRosterManager {
                 teamByName[teamName] = team
 
                 market.removeAll { it.id == candidate.id }
+                signablePlayerIds.remove(candidate.id)
                 market += weakest
                 transactions += Transaction(teamName, candidate.id, weakest.id)
             }
