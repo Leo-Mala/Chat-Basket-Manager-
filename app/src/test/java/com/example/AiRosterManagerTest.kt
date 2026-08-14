@@ -87,10 +87,14 @@ class AiRosterManagerTest {
     }
 
     @Test
-    fun offseasonCreatesContractForCpuFreeAgentSigning() {
-        val teams = NbaDataGenerator.getAllTeams()
+    fun offseasonCreatesContractForCpuFreeAgentVacancySigning() {
+        val originalTeams = NbaDataGenerator.getAllTeams()
+        val user = originalTeams[0]
+        val cpu = originalTeams[1]
+        val cpuWithVacancy = cpu.copy(players = cpu.players.take(11))
+        val teams = originalTeams.map { if (it.name == cpu.name) cpuWithVacancy else it }
         val season = Season(teams, nextPlayerId = nextId(teams)).apply {
-            userTeamName = teams[0].name
+            userTeamName = user.name
         }
         val eliteId = season.allocatePlayerIds(1).first
         val elite = player(eliteId, "PG", 95, 25)
@@ -99,9 +103,10 @@ class AiRosterManagerTest {
         val signedTeam = result.season.teams.firstOrNull { team -> team.players.any { it.id == eliteId } }
 
         assertNotNull(signedTeam)
+        assertEquals(cpu.name, signedTeam!!.name)
         val contract = result.contracts[eliteId]
         assertNotNull(contract)
-        assertEquals(signedTeam!!.abbreviation, contract!!.teamId)
+        assertEquals(signedTeam.abbreviation, contract!!.teamId)
         assertFalse(result.freeAgents.any { it.id == eliteId })
     }
 

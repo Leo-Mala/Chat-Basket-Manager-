@@ -1,5 +1,6 @@
 package com.example.domain.season
 
+import com.example.domain.contract.AiContractRenewalManager
 import com.example.domain.contract.ContractManager
 import com.example.domain.draft.AiDraftManager
 import com.example.domain.draft.DraftManager
@@ -22,12 +23,22 @@ class OffseasonManager(
     private val aiRosterManager: AiRosterManager = AiRosterManager(),
     private val draftManager: DraftManager = DraftManager(),
     private val aiDraftManager: AiDraftManager = AiDraftManager(draftManager),
-    private val aiTradeManager: AiTradeManager = AiTradeManager()
+    private val aiTradeManager: AiTradeManager = AiTradeManager(),
+    private val aiContractRenewalManager: AiContractRenewalManager = AiContractRenewalManager(contractManager)
 ) {
+    /** Lightweight diagnostics describing the CPU market actions performed in one offseason. */
+    data class Activity(
+        val cpuTrades: Int = 0,
+        val cpuFreeAgentSignings: Int = 0,
+        val cpuDraftPicks: Int = 0,
+        val cpuContractRenewals: Int = 0
+    )
+
     data class Result(
         val season: Season,
         val contracts: Map<Int, PlayerContract>,
-        val freeAgents: List<Player>
+        val freeAgents: List<Player>,
+        val activity: Activity = Activity()
     )
 
     fun advance(
@@ -44,7 +55,13 @@ class OffseasonManager(
             .map { it.key }
 
         val contractResult = contractManager.advanceSeason(currentContracts.values)
-        val expiredIds = contractResult.expiredPlayerIds
+        val renewalResult = aiContractRenewalManager.renewExpiring(
+            teams = currentSeason.teams,
+            continuingContracts = contractResult.contracts,
+            expiredPlayerIds = contractResult.expiredPlayerIds,
+            userTeamName = currentSeason.userTeamName
+        )
+        val expiredIds = renewalResult.unrenewedExpiredPlayerIds
         val expiredPlayers = currentSeason.teams
             .flatMap(NbaTeam::players)
             .filter { it.id in expiredIds }
@@ -64,29 +81,37 @@ class OffseasonManager(
             .filter { it.age <= SeasonRules.MAX_PLAYER_AGE }
 
         // CPU teams act only on the market that already existed before this offseason.
-        // Fresh contract expirations enter free agency after the CPU phase. This preserves
-        // the game's existing contract-expiration phase and avoids instant CPU poaching.
+        // Fresh unrenewed expirations enter free agency after the CPU phase. This preserves
+        // the user's negotiation window and prevents instant same-window CPU poaching.
         val agedExistingFreeAgents = ageMarket(currentFreeAgents)
         val agedExpiredPlayers = ageMarket(expiredPlayers)
 
-        val advanced = seasonManager.advanceSeason(currentSeason)
+        // The coordinated offseason owns roster construction. Advance development/retirement
+        // without the legacy hidden rookie replenishment, then let market systems fill vacancies.
+        val advanced = seasonManager.advanceSeason(currentSeason, replenishRosters = false)
 
-        // CPU-to-CPU trades happen before free agency and the draft. Only continuing players
-        // with active, tradeable contracts are eligible, which automatically excludes fresh
-        // rookies and prevents the user-controlled team from being changed by the CPU market.
+        // CPU-to-CPU trades happen before free agency and the draft. Renewed players already have
+        // active contracts here; unrenewed expirations have been removed and cannot be traded.
         val aiTradeResult = aiTradeManager.rebalance(
             teams = advanced.teams,
-            contracts = contractResult.contracts,
+            contracts = renewalResult.contracts,
             userTeamName = advanced.userTeamName,
-            priorityTeamNames = priorityTeamNames
+            priorityTeamNames = priorityTeamNames,
+            maxTrades = 3,
+            minimumBalanceGain = 2
         )
         advanced.teams = aiTradeResult.teams
 
+        // Free agency repairs real vacancies caused by unrenewed contracts and retirement. No
+        // additional production upgrade is forced every summer; draft and trades provide growth.
         val aiFreeAgencyResult = aiRosterManager.rebalance(
             teams = advanced.teams,
             freeAgents = agedExistingFreeAgents,
             userTeamName = advanced.userTeamName,
-            priorityTeamNames = priorityTeamNames
+            priorityTeamNames = priorityTeamNames,
+            maxUpgradesPerTeam = 0,
+            minimumUpgrade = 6,
+            minimumRosterSize = 12
         )
         advanced.teams = aiFreeAgencyResult.teams
 
@@ -108,7 +133,7 @@ class OffseasonManager(
         )
         advanced.teams = aiDraftResult.teams
 
-        val nextContracts = contractResult.contracts.toMutableMap()
+        val nextContracts = renewalResult.contracts.toMutableMap()
         advanced.teams.forEach { team ->
             team.players.forEach { player ->
                 val existing = nextContracts[player.id]
@@ -135,6 +160,12 @@ class OffseasonManager(
                     agedExpiredPlayers +
                     aiDraftResult.releasedPlayers +
                     aiDraftResult.undraftedRookies
+            ),
+            activity = Activity(
+                cpuTrades = aiTradeResult.trades.size,
+                cpuFreeAgentSignings = aiFreeAgencyResult.transactions.size,
+                cpuDraftPicks = aiDraftResult.picks.size,
+                cpuContractRenewals = renewalResult.renewedPlayerIds.size
             )
         )
     }
