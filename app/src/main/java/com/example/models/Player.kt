@@ -66,14 +66,83 @@ data class Player(
         overall = calculateOverall()
     }
 
+    /**
+     * Hidden deterministic career profile derived only from the durable player id.
+     *
+     * The profile is intentionally not persisted: the same player id always resolves to the same
+     * growth tier and peak age after save/load, while careers can still include busts, ordinary
+     * development, high-upside prospects and rare exceptional trajectories.
+     */
+    private fun developmentProfile(): Int {
+        val roll = Math.floorMod(id.toLong() * 73L + 19L, 100L).toInt()
+        return when {
+            roll < 18 -> 0 // low ceiling / likely stagnation
+            roll < 70 -> 1 // normal development
+            roll < 92 -> 2 // high upside
+            else -> 3      // exceptional upside
+        }
+    }
+
+    private fun developmentGrowthPercent(): Int = when (developmentProfile()) {
+        0 -> 18
+        1 -> 48
+        2 -> 75
+        else -> 100
+    }
+
+    /** Individual prime window. Higher-upside careers retain a credible late-blooming tail. */
+    private fun developmentPeakAge(): Int {
+        val variation = Math.floorMod(id.toLong() * 37L + 11L, 100L).toInt()
+        return when (developmentProfile()) {
+            0 -> 26 + (variation % 4) // 26..29
+            1 -> 28 + (variation % 5) // 28..32
+            2 -> 31 + (variation % 5) // 31..35
+            else -> 33 + (variation % 4) // 33..36
+        }
+    }
+
+    private fun growthChance(baseChance: Int): Int =
+        (baseChance * developmentGrowthPercent() / 100).coerceIn(0, 95)
+
+    /**
+     * High-upside players develop more slowly in the early prime and concentrate more of their
+     * remaining growth in the final three seasons before their personal peak. This shifts timing
+     * without simply adding extra career growth or inflating the league-wide 90+ population.
+     */
+    private fun primeGrowthChance(baseChance: Int, currentAge: Int, peakAge: Int): Int {
+        val scaled = growthChance(baseChance)
+        if (developmentProfile() < 2) return scaled
+        return if (currentAge < peakAge - 2) {
+            (scaled * 35 / 100).coerceAtLeast(1)
+        } else {
+            (scaled * 150 / 100).coerceAtMost(95)
+        }
+    }
+
+    /**
+     * Prime development should polish skills that actually matter for the player's role.
+     * This prevents late-career growth events from being wasted on very low-weight attributes,
+     * especially for centers and power forwards, while still keeping the OVR gain gradual.
+     */
+    private fun primeAttributes(): List<String> = when (position) {
+        "PG" -> listOf("passing", "shooting")
+        "SG" -> listOf("shooting", "passing", "defense")
+        "SF" -> listOf("shooting", "defense", "passing")
+        "PF" -> listOf("defense", "rebound", "shooting")
+        "C" -> listOf("defense", "rebound")
+        else -> listOf("shooting", "defense", "rebound", "passing")
+    }
+
     fun evolveInSeason(ptsInGame: Int = 0) {
         val earnedXp = (8 + ptsInGame / 4).coerceIn(8, 25)
         xp += earnedXp
 
-        // Ten-game checkpoints avoid compounding 16 attribute boosts in one season.
+        // Ten-game checkpoints keep development gradual. Chances are scaled by a stable hidden
+        // career profile so not every 19-year-old follows essentially the same +10 OVR curve.
         if (seasonGames > 0 && seasonGames % 10 == 0) {
             val random = kotlin.random.Random(id * 31 + age * 997 + seasonGames * 7919 + seasonPoints)
             val all = listOf("shooting", "defense", "rebound", "passing", "athleticism")
+            val peakAge = developmentPeakAge()
             when {
                 age <= 22 -> {
                     val preferred = when (position) {
@@ -84,17 +153,25 @@ data class Player(
                         "C"  -> listOf("defense", "rebound", "athleticism")
                         else -> all
                     }
-                    if (random.nextInt(100) < 80) boostAttribute(preferred[random.nextInt(preferred.size)], 1)
+                    if (random.nextInt(100) < growthChance(80)) {
+                        boostAttribute(preferred[random.nextInt(preferred.size)], 1)
+                    }
                 }
                 age in 23..25 -> {
-                    if (random.nextInt(100) < 45) boostAttribute(all[random.nextInt(all.size)], 1)
+                    if (random.nextInt(100) < growthChance(45)) {
+                        boostAttribute(all[random.nextInt(all.size)], 1)
+                    }
                 }
-                age in 26..30 -> {
-                    val technical = listOf("shooting", "passing", "defense")
-                    if (random.nextInt(100) < 12) boostAttribute(technical[random.nextInt(technical.size)], 1)
+                age <= peakAge -> {
+                    val prime = primeAttributes()
+                    if (random.nextInt(100) < primeGrowthChance(36, age, peakAge)) {
+                        boostAttribute(prime[random.nextInt(prime.size)], 1)
+                    }
                 }
                 else -> {
-                    if (seasonGames > 40 && random.nextInt(100) < 20 && athleticism > 50) {
+                    val yearsPastPeak = (age - peakAge).coerceAtLeast(1)
+                    val physicalDeclineChance = (10 + yearsPastPeak * 6).coerceAtMost(50)
+                    if (seasonGames > 40 && random.nextInt(100) < physicalDeclineChance && athleticism > 45) {
                         athleticism--
                         overall = calculateOverall()
                     }
@@ -117,27 +194,40 @@ data class Player(
         age++
         val random = kotlin.random.Random(id * 1009 + age * 9176)
         val all = listOf("shooting", "defense", "rebound", "passing", "athleticism")
+        val peakAge = developmentPeakAge()
 
         when {
             age <= 22 -> {
-                if (random.nextInt(100) < 75) boostAttribute(all[random.nextInt(all.size)], 1)
-                if (random.nextInt(100) < 20) boostAttribute(all[random.nextInt(all.size)], 1)
+                if (random.nextInt(100) < growthChance(75)) {
+                    boostAttribute(all[random.nextInt(all.size)], 1)
+                }
+                if (random.nextInt(100) < growthChance(20)) {
+                    boostAttribute(all[random.nextInt(all.size)], 1)
+                }
             }
             age <= 25 -> {
-                if (random.nextInt(100) < 55) boostAttribute(all[random.nextInt(all.size)], 1)
+                if (random.nextInt(100) < growthChance(55)) {
+                    boostAttribute(all[random.nextInt(all.size)], 1)
+                }
             }
-            age <= 30 -> {
-                val technical = listOf("shooting", "passing", "defense")
-                if (random.nextInt(100) < 15) boostAttribute(technical[random.nextInt(technical.size)], 1)
-                if (random.nextInt(100) < 10 && athleticism > 50) athleticism--
-            }
-            age <= 33 -> {
-                if (random.nextInt(100) < 45 && athleticism > 50) athleticism--
+            age <= peakAge -> {
+                val prime = primeAttributes()
+                if (random.nextInt(100) < primeGrowthChance(40, age, peakAge)) {
+                    boostAttribute(prime[random.nextInt(prime.size)], 1)
+                }
             }
             else -> {
-                val physicalDecline = 1 + if (random.nextInt(100) < 30) 1 else 0
-                athleticism = (athleticism - physicalDecline).coerceAtLeast(40)
-                if (random.nextInt(100) < 45) {
+                val yearsPastPeak = (age - peakAge).coerceAtLeast(1)
+                val athleticDeclineChance = (38 + yearsPastPeak * 10).coerceAtMost(95)
+                if (athleticism > 40 && random.nextInt(100) < athleticDeclineChance) {
+                    athleticism--
+                    if (yearsPastPeak >= 3 && random.nextInt(100) < 35 && athleticism > 40) {
+                        athleticism--
+                    }
+                }
+
+                val technicalDeclineChance = (12 + yearsPastPeak * 7).coerceAtMost(65)
+                if (random.nextInt(100) < technicalDeclineChance) {
                     when (all[random.nextInt(4)]) {
                         "shooting" -> shooting = (shooting - 1).coerceAtLeast(40)
                         "defense" -> defense = (defense - 1).coerceAtLeast(40)
