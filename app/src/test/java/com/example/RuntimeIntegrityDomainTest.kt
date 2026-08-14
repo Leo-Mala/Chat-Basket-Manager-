@@ -14,18 +14,24 @@ import org.junit.Test
 class RuntimeIntegrityDomainTest {
     @Test
     fun releasedPlayersRemainIdentifiableForFreeAgency() {
-        val team = NbaDataGenerator.getAllTeams().first()
-        val season = Season(NbaDataGenerator.getAllTeams(), nextPlayerId = 10_000)
+        val teams = NbaDataGenerator.getAllTeams()
+        val team = teams.first()
+        val season = Season(teams, nextPlayerId = 10_000)
         val rookie = DraftManager().generateClass(season, emptyList(), 1, size = 1).first()
         val draftResult = DraftManager().draft(team, rookie, maxRosterSize = team.players.size)
         assertNotNull(draftResult.releasedPlayer)
         assertTrue(draftResult.team.players.none { it.id == draftResult.releasedPlayer!!.id })
 
+        // Free agency only requires a release at the standard 12-player roster threshold.
+        // Build that state explicitly instead of assuming the seed roster size.
+        val fullRoster = teams.flatMap { it.players }.distinctBy { it.id }.take(12)
+        val fullTeam = team.copy(players = fullRoster)
         val freeAgent = RosterManager().generateFreeAgents(season, emptyList()).players.first()
-        val signing = RosterManager().signFreeAgent(team, Finance(Int.MAX_VALUE), freeAgent, 1)
+        val signing = RosterManager().signFreeAgent(fullTeam, Finance(Int.MAX_VALUE), freeAgent, 1)
         assertNotNull(signing)
         assertNotNull(signing!!.releasedPlayer)
         assertTrue(signing.team.players.none { it.id == signing.releasedPlayer!!.id })
+        assertEquals(12, signing.team.players.size)
     }
 
     @Test
