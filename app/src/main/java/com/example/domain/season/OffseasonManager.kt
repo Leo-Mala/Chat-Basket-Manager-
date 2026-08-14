@@ -1,6 +1,8 @@
 package com.example.domain.season
 
 import com.example.domain.contract.ContractManager
+import com.example.domain.rules.FreeAgencyRules
+import com.example.domain.rules.SeasonRules
 import com.example.models.NbaTeam
 import com.example.models.Player
 import com.example.models.PlayerContract
@@ -35,6 +37,18 @@ class OffseasonManager(
             team.copy(players = team.players.filterNot { it.id in expiredIds })
         }
 
+        // Players outside a roster still live through the offseason. Previously this pool
+        // never aged or retired, which allowed decades-old free agents to accumulate forever.
+        val agedFreeAgents = (currentFreeAgents + expiredPlayers)
+            .distinctBy { it.id }
+            .onEach { player ->
+                player.advanceSeason()
+                player.injured = false
+                player.injuryDays = 0
+                player.resetSeasonStats()
+            }
+            .filter { it.age <= SeasonRules.MAX_PLAYER_AGE }
+
         val advanced = seasonManager.advanceSeason(currentSeason)
         val nextContracts = contractResult.contracts.toMutableMap()
 
@@ -59,7 +73,7 @@ class OffseasonManager(
         return Result(
             season = advanced,
             contracts = nextContracts,
-            freeAgents = (currentFreeAgents + expiredPlayers).distinctBy { it.id }
+            freeAgents = FreeAgencyRules.normalizeMarket(agedFreeAgents)
         )
     }
 }
