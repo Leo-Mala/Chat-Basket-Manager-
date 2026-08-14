@@ -3,6 +3,7 @@ package com.example.domain.draft
 import com.example.domain.rules.FreeAgencyRules
 import com.example.domain.rules.PlayerGenerationRules
 import com.example.models.*
+import kotlin.random.Random
 
 class DraftManager {
     data class DraftResult(val team: NbaTeam, val releasedPlayer: Player?)
@@ -18,15 +19,34 @@ class DraftManager {
         return List(size) { index ->
             val id = ids.first + index
             // Scouting affects information quality elsewhere; it must not manufacture stronger athletes.
-            val random = kotlin.random.Random(id)
+            val random = Random(id)
+            val name = "${firstNames[random.nextInt(firstNames.size)]} ${lastNames[random.nextInt(lastNames.size)]}"
+            val position = positions[random.nextInt(positions.size)]
             PlayerGenerationRules.createBalancedPlayer(
                 id = id,
-                name = "${firstNames[random.nextInt(firstNames.size)]} ${lastNames[random.nextInt(lastNames.size)]}",
-                position = positions[random.nextInt(positions.size)],
-                targetOverall = random.nextInt(70, 85),
+                name = name,
+                position = position,
+                targetOverall = draftTargetOverall(random),
                 age = 19,
                 random = random
             )
+        }
+    }
+
+    /**
+     * Sustainable deterministic talent curve for long careers.
+     *
+     * Most rookies are rotation-level prospects, while genuinely elite entrants remain rare.
+     * The small elite tail prevents all 90+ players from disappearing after the initial real-world
+     * stars retire without allowing every draft class to manufacture superstars.
+     */
+    private fun draftTargetOverall(random: Random): Int {
+        val tierRoll = random.nextInt(1_000)
+        return when {
+            tierRoll < 10 -> random.nextInt(91, 95)  // ~1% generational/elite prospect
+            tierRoll < 60 -> random.nextInt(86, 91)  // next ~5% high-end prospect
+            tierRoll < 220 -> random.nextInt(82, 86) // next ~16% strong prospect
+            else -> random.nextInt(70, 82)           // majority: normal developmental prospect
         }
     }
 
