@@ -1,5 +1,6 @@
 package com.example.domain.draft
 
+import com.example.domain.rules.PlayerGenerationRules
 import com.example.models.*
 
 class DraftManager {
@@ -10,20 +11,20 @@ class DraftManager {
     private val positions = listOf("PG", "SG", "SF", "PF", "C")
 
     fun generateClass(season: Season?, freeAgents: List<Player>, scoutingLevel: Int, size: Int = 6): List<Player> {
-        val minOvr = 69 + scoutingLevel
-        val maxOvr = 81 + (scoutingLevel * 1.5).toInt()
+        require(scoutingLevel in 1..5) { "Nível de scouting deve estar entre 1 e 5" }
+        require(size >= 0) { "Tamanho da classe de Draft inválido" }
         val ids = requireNotNull(season) { "Draft class requires an active season for globally unique player IDs" }.allocatePlayerIds(size)
         return List(size) { index ->
-            val random = kotlin.random.Random(ids.first + index)
-            val ovr = random.nextInt(minOvr, maxOvr + 1)
-            Player(
-                ids.elementAt(index),
-                "${firstNames[random.nextInt(firstNames.size)]} ${lastNames[random.nextInt(lastNames.size)]}",
-                positions[random.nextInt(positions.size)],
-                ovr,
-                ovr - random.nextInt(0, 9), ovr - random.nextInt(0, 9),
-                ovr - random.nextInt(0, 9), ovr - random.nextInt(0, 9),
-                ovr - random.nextInt(0, 9), 19
+            val id = ids.first + index
+            // Scouting affects information quality elsewhere; it must not manufacture stronger athletes.
+            val random = kotlin.random.Random(id)
+            PlayerGenerationRules.createBalancedPlayer(
+                id = id,
+                name = "${firstNames[random.nextInt(firstNames.size)]} ${lastNames[random.nextInt(lastNames.size)]}",
+                position = positions[random.nextInt(positions.size)],
+                targetOverall = random.nextInt(70, 85),
+                age = 19,
+                random = random
             )
         }
     }

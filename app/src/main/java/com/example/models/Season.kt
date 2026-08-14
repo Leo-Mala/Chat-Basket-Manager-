@@ -3,6 +3,7 @@ package com.example.models
 import android.content.Context
 import com.example.simulator.GameSimulator
 import com.example.simulator.SimulationConfig
+import com.example.domain.rules.PlayerGenerationRules
 import com.example.domain.rules.SeasonRules
 import java.io.Serializable
 
@@ -162,7 +163,6 @@ class Season(
 
     fun advanceDay() {
         currentDay++
-        // Avança mês a cada 12 dias de jogos (para dar ~7 meses de temporada regular de 82 jogos: Out, Nov, Dez, Jan, Fev, Mar, Abr)
         if (currentDay % 12 == 0) {
             currentMonth++
             if (currentMonth > 12) {
@@ -185,17 +185,24 @@ class Season(
 
     fun advanceSeason(): Season {
         val newTeams = teams.map { team ->
-            val keptPlayers = team.players.filter { it.age <= SeasonRules.MAX_PLAYER_AGE }.toMutableList()
-            val needed = 12 - keptPlayers.size
+            // Existing roster players age/develop first. Retirement is evaluated after aging,
+            // so an age-38 player cannot survive as an active 39-year-old for another season.
+            val keptPlayers = team.players
+                .onEach { player ->
+                    player.advanceSeason()
+                    player.injured = false
+                    player.injuryDays = 0
+                    player.resetSeasonStats()
+                }
+                .filter { it.age <= SeasonRules.MAX_PLAYER_AGE }
+                .toMutableList()
+
+            // Replenishment happens only after development/retirement. New rookies therefore
+            // enter the next season at their generated age and rating, without a free offseason boost.
+            val needed = (12 - keptPlayers.size).coerceAtLeast(0)
             if (needed > 0) {
                 val rookieIds = allocatePlayerIds(needed)
                 keptPlayers.addAll(generateRookies(needed, rookieIds.first))
-            }
-            keptPlayers.forEach {
-                it.advanceSeason()
-                it.injured = false
-                it.injuryDays = 0
-                it.resetSeasonStats()
             }
             team.copy(players = keptPlayers)
         }
@@ -213,33 +220,24 @@ class Season(
     }
 
     private fun generateRookies(count: Int, startingId: Int): List<Player> {
-        val rookies = mutableListOf<Player>()
         val firstNames = listOf("Jayden", "Aiden", "Ethan", "Liam", "Noah", "Oliver", "Elijah", "James", "Benjamin", "Lucas")
         val lastNames = listOf("Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez")
-        repeat(count) { index ->
-            // Rookie generation is deterministic from the allocated identity. This makes
-            // long-career failures reproducible without sharing a global Random instance.
-            val random = kotlin.random.Random(startingId + index)
-            val overall = random.nextInt(60, 80)
-            rookies.add(
-                Player(
-                    id = startingId + index,
-                    name = "${firstNames[random.nextInt(firstNames.size)]} ${lastNames[random.nextInt(lastNames.size)]}",
-                    position = listOf("PG", "SG", "SF", "PF", "C")[random.nextInt(5)],
-                    overall = overall,
-                    shooting = overall - random.nextInt(0, 11),
-                    defense = overall - random.nextInt(0, 11),
-                    rebound = overall - random.nextInt(0, 11),
-                    passing = overall - random.nextInt(0, 11),
-                    athleticism = overall - random.nextInt(0, 11),
-                    age = 20 + random.nextInt(0, 4)
-                )
+        val positions = listOf("PG", "SG", "SF", "PF", "C")
+        return List(count) { index ->
+            val id = startingId + index
+            val random = kotlin.random.Random(id)
+            PlayerGenerationRules.createBalancedPlayer(
+                id = id,
+                name = "${firstNames[random.nextInt(firstNames.size)]} ${lastNames[random.nextInt(lastNames.size)]}",
+                position = positions[random.nextInt(positions.size)],
+                targetOverall = random.nextInt(62, 80),
+                age = 19 + random.nextInt(0, 3),
+                random = random
             )
         }
-        return rookies
     }
 
-            data class SeriesResult(
+    data class SeriesResult(
         val winner: NbaTeam,
         val games: List<GameSimulator.GameResult>,
         val roundName: String,
@@ -250,7 +248,7 @@ class Season(
         val team2Wins: Int = 0
     ) : Serializable
 
-            data class PlayoffResult(
+    data class PlayoffResult(
         val eastChampion: NbaTeam,
         val westChampion: NbaTeam,
         val nbaChampion: NbaTeam,
@@ -258,7 +256,7 @@ class Season(
         val seriesResults: List<SeriesResult>
     ) : Serializable
 
-            data class SeasonRecord(
+    data class SeasonRecord(
         var wins: Int = 0,
         var losses: Int = 0,
         var gamesPlayed: Int = 0,

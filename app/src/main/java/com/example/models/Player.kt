@@ -67,46 +67,36 @@ data class Player(
     }
 
     fun evolveInSeason(ptsInGame: Int = 0) {
-        // Gain XP from playing
         val earnedXp = (8 + ptsInGame / 4).coerceIn(8, 25)
         xp += earnedXp
 
-        // Every 5 games played in season, trigger in-season progression/regression
-        if (seasonGames > 0 && seasonGames % 5 == 0) {
+        // Ten-game checkpoints avoid compounding 16 attribute boosts in one season.
+        if (seasonGames > 0 && seasonGames % 10 == 0) {
+            val random = kotlin.random.Random(id * 31 + age * 997 + seasonGames * 7919 + seasonPoints)
+            val all = listOf("shooting", "defense", "rebound", "passing", "athleticism")
             when {
-                // Young prospects (age <= 22): rapid evolution
                 age <= 22 -> {
-                    val attr = when (position) {
-                        "PG" -> listOf("passing", "shooting", "athleticism").random()
-                        "SG" -> listOf("shooting", "athleticism", "passing").random()
-                        "SF" -> listOf("shooting", "defense", "athleticism").random()
-                        "PF" -> listOf("rebound", "defense", "shooting").random()
-                        "C"  -> listOf("defense", "rebound", "athleticism").random()
-                        else -> listOf("shooting", "defense", "rebound", "passing", "athleticism").random()
+                    val preferred = when (position) {
+                        "PG" -> listOf("passing", "shooting", "athleticism")
+                        "SG" -> listOf("shooting", "athleticism", "passing")
+                        "SF" -> listOf("shooting", "defense", "athleticism")
+                        "PF" -> listOf("rebound", "defense", "shooting")
+                        "C"  -> listOf("defense", "rebound", "athleticism")
+                        else -> all
                     }
-                    boostAttribute(attr, 1)
+                    if (random.nextInt(100) < 80) boostAttribute(preferred[random.nextInt(preferred.size)], 1)
                 }
-                // Young players (23..25): steady progress
                 age in 23..25 -> {
-                    if ((1..100).random() <= 60) {
-                        val attr = listOf("shooting", "defense", "rebound", "passing", "athleticism").random()
-                        boostAttribute(attr, 1)
-                    }
+                    if (random.nextInt(100) < 45) boostAttribute(all[random.nextInt(all.size)], 1)
                 }
-                // Prime players (26..30): peak stability & slight technical gains
                 age in 26..30 -> {
-                    if ((1..100).random() <= 20) {
-                        val attr = listOf("shooting", "passing", "defense").random()
-                        boostAttribute(attr, 1)
-                    }
+                    val technical = listOf("shooting", "passing", "defense")
+                    if (random.nextInt(100) < 12) boostAttribute(technical[random.nextInt(technical.size)], 1)
                 }
-                // Veterans (> 30): slight physical wear from heavy season schedule
                 else -> {
-                    if (seasonGames > 35 && (1..100).random() <= 20) {
-                        if (athleticism > 60) {
-                            athleticism = (athleticism - 1).coerceAtLeast(50)
-                            overall = calculateOverall()
-                        }
+                    if (seasonGames > 40 && random.nextInt(100) < 20 && athleticism > 50) {
+                        athleticism--
+                        overall = calculateOverall()
                     }
                 }
             }
@@ -125,26 +115,36 @@ data class Player(
 
     fun advanceSeason() {
         age++
-        // Jovens (<= 25) evoluem mais
-        if (age <= 25) {
-            val improvement = (1..3).random()
-            shooting = minOf(99, shooting + improvement)
-            defense = minOf(99, defense + improvement)
-            rebound = minOf(99, rebound + improvement)
-            passing = minOf(99, passing + improvement)
-            athleticism = minOf(99, athleticism + improvement)
-        } else if (age in 26..32) {
-            // Meia-idade: mantém ou perde um pouco
-            if (kotlin.random.Random.nextBoolean()) {
-                val change = (0..2).random()
-                shooting = (shooting - change).coerceAtLeast(0)
+        val random = kotlin.random.Random(id * 1009 + age * 9176)
+        val all = listOf("shooting", "defense", "rebound", "passing", "athleticism")
+
+        when {
+            age <= 22 -> {
+                if (random.nextInt(100) < 75) boostAttribute(all[random.nextInt(all.size)], 1)
+                if (random.nextInt(100) < 20) boostAttribute(all[random.nextInt(all.size)], 1)
             }
-        } else {
-            // Veteranos (> 32): declínio
-            val decline = (1..3).random()
-            athleticism = (athleticism - decline).coerceAtLeast(0)
-            if (kotlin.random.Random.nextBoolean()) {
-                shooting = (shooting - 1).coerceAtLeast(0)
+            age <= 25 -> {
+                if (random.nextInt(100) < 55) boostAttribute(all[random.nextInt(all.size)], 1)
+            }
+            age <= 30 -> {
+                val technical = listOf("shooting", "passing", "defense")
+                if (random.nextInt(100) < 15) boostAttribute(technical[random.nextInt(technical.size)], 1)
+                if (random.nextInt(100) < 10 && athleticism > 50) athleticism--
+            }
+            age <= 33 -> {
+                if (random.nextInt(100) < 45 && athleticism > 50) athleticism--
+            }
+            else -> {
+                val physicalDecline = 1 + if (random.nextInt(100) < 30) 1 else 0
+                athleticism = (athleticism - physicalDecline).coerceAtLeast(40)
+                if (random.nextInt(100) < 45) {
+                    when (all[random.nextInt(4)]) {
+                        "shooting" -> shooting = (shooting - 1).coerceAtLeast(40)
+                        "defense" -> defense = (defense - 1).coerceAtLeast(40)
+                        "rebound" -> rebound = (rebound - 1).coerceAtLeast(40)
+                        "passing" -> passing = (passing - 1).coerceAtLeast(40)
+                    }
+                }
             }
         }
         overall = calculateOverall()
