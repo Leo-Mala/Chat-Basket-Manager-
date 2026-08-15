@@ -27,6 +27,7 @@ import com.example.simulator.SimulationConfig
 import com.example.utils.AwardsCalculator
 import com.example.utils.AutoSaveManager
 import com.example.utils.CoachFeedbackGenerator
+import com.example.utils.SaveRequestCoordinator
 import com.example.utils.ToastUtils
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
@@ -40,13 +41,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.coroutineContext
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
-    /** Serializes snapshot writes and invalidates stale saves after a career reset. */
+    /** Serializes persistence and coalesces stale snapshots/reset races. */
     private val saveMutex = Mutex()
-    private val saveGeneration = AtomicLong(0L)
+    private val saveCoordinator = SaveRequestCoordinator()
 
     // Domain services: no Compose or Android dependencies.
     private val financeManager = FinanceManager()
@@ -231,13 +231,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
 
     fun startNewGame(selectedTeamName: String, coachName: String, offSkill: Int, defSkill: Int, motSkill: Int, selectedDifficulty: Int = 1) {
-        // Invalidate every snapshot captured before this reset. The reset itself is
-        // serialized by AutoSaveManager, so an older save can never overwrite the new career.
-        val generation = saveGeneration.incrementAndGet()
+        // Invalidate queued snapshots before clearing. Clear shares the same mutex as saves,
+        // so an in-flight old snapshot must finish before the database is cleared.
+        val resetToken = saveCoordinator.beginReset()
         viewModelScope.launch(Dispatchers.IO) {
-            AutoSaveManager.clearGameState()
-            if (generation != saveGeneration.get()) return@launch
+            saveMutex.withLock { AutoSaveManager.clearGameState() }
+            if (!saveCoordinator.isCurrentReset(resetToken)) return@launch
             withContext(Dispatchers.Main) {
+                if (!saveCoordinator.finishReset(resetToken)) return@withContext
                 initializeNewGame(selectedTeamName, coachName, offSkill, defSkill, motSkill, selectedDifficulty)
             }
         }
@@ -319,7 +320,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveGame() {
-        val generation = saveGeneration.get()
+        val saveTicket = saveCoordinator.nextSave() ?: return
         val currentTeam = managedTeam
         val currentSeason = season
         val currentFinances = finances
@@ -345,8 +346,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch(Dispatchers.IO) {
             saveMutex.withLock {
-                // A newer state has already been scheduled; skip this stale snapshot.
-                if (generation != saveGeneration.get()) return@withLock
+                // Only the newest snapshot in the current career may reach Room.
+                if (!saveCoordinator.isCurrent(saveTicket)) return@withLock
                 AutoSaveManager.saveGameState(
                     team = currentTeam, season = currentSeason, finance = currentFinances,
                     tactics = currentTactics, coach = currentCoach, history = currentHistory,
@@ -466,10 +467,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearSavedGame(context: Context) {
-        val generation = saveGeneration.incrementAndGet()
+        val resetToken = saveCoordinator.beginReset()
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { AutoSaveManager.clearGameState() }
-            if (generation != saveGeneration.get()) return@launch
+            withContext(Dispatchers.IO) {
+                saveMutex.withLock { AutoSaveManager.clearGameState() }
+            }
+            if (!saveCoordinator.isCurrentReset(resetToken)) return@launch
+            if (!saveCoordinator.finishReset(resetToken)) return@launch
             resetCareerState()
             ToastUtils.showToast(context, "Jogo limpo!")
         }
