@@ -184,11 +184,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
 
-            val loadedGameState = when {
-                loadedSeason.currentDay < 82 -> GameState.ACTIVE
-                loadedPlayoffResult != null -> GameState.CHAMPIONSHIP_CELEBRATION
-                else -> GameState.PLAYOFFS
-            }
+            val loadedGameState = com.example.domain.season.CareerResumeRules.resolve(
+                currentDay = loadedSeason.currentDay,
+                hasPlayoffResult = loadedPlayoffResult != null,
+                hasDraftClass = loadedDraftRookies.isNotEmpty()
+            )
 
             withContext(Dispatchers.Main) {
                 loadErrorMessage = null
