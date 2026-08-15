@@ -32,7 +32,7 @@ jobs:
           vm = Path('app/src/main/java/com/example/GameViewModel.kt')
           text = vm.read_text()
           pattern = re.compile(
-              r'    fun syncStartingFive\(\) \{.*?\n    \}\n\n\n    // Automatic in-game substitutions simulation',
+              r'    fun syncStartingFive\(\) \{.*?\n    \}\n\n    // Automatic in-game substitutions simulation',
               re.S
           )
           matches = list(pattern.finditer(text))
@@ -44,7 +44,6 @@ jobs:
               '        startingFive = rosterManager.syncStartingFive(team, startingFive)',
               '        if (persist) saveGame()',
               '    }',
-              '',
               '',
               '    // Automatic in-game substitutions simulation',
           ])
