@@ -67,6 +67,21 @@ data class Player(
     }
 
     /**
+     * Deterministic 64-bit avalanche mixer derived only from the durable player id.
+     *
+     * A linear `id * constant % 100` pattern creates visible cycles for sequential IDs and can
+     * alias badly when a caller samples every Nth player. Mixing before reducing to 0..99 keeps
+     * save/load deterministic while distributing career profiles and prime ages much more evenly.
+     */
+    private fun developmentRoll(salt: Long): Int {
+        var value = id.toLong() * -7046029254386353131L + salt
+        value = (value xor (value ushr 30)) * -4658895280553007687L
+        value = (value xor (value ushr 27)) * -7723592293110705685L
+        value = value xor (value ushr 31)
+        return Math.floorMod(value, 100L).toInt()
+    }
+
+    /**
      * Hidden deterministic career profile derived only from the durable player id.
      *
      * The profile is intentionally not persisted: the same player id always resolves to the same
@@ -74,7 +89,7 @@ data class Player(
      * development, high-upside prospects and rare exceptional trajectories.
      */
     private fun developmentProfile(): Int {
-        val roll = Math.floorMod(id.toLong() * 73L + 19L, 100L).toInt()
+        val roll = developmentRoll(0x13579BDFL)
         return when {
             roll < 18 -> 0 // low ceiling / likely stagnation
             roll < 70 -> 1 // normal development
@@ -92,7 +107,7 @@ data class Player(
 
     /** Individual prime window. Higher-upside careers retain a credible late-blooming tail. */
     private fun developmentPeakAge(): Int {
-        val variation = Math.floorMod(id.toLong() * 37L + 11L, 100L).toInt()
+        val variation = developmentRoll(0x2468ACE0L)
         return when (developmentProfile()) {
             0 -> 26 + (variation % 4) // 26..29
             1 -> 28 + (variation % 5) // 28..32
