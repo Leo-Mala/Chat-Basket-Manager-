@@ -111,8 +111,8 @@ data class Player(
         return when (developmentProfile()) {
             0 -> 26 + (variation % 4) // 26..29
             1 -> 28 + (variation % 5) // 28..32
-            2 -> 31 + (variation % 5) // 31..35
-            else -> 33 + (variation % 4) // 33..36
+            2 -> 33 + (variation % 4) // 33..36
+            else -> 34 + (variation % 3) // 34..36
         }
     }
 
