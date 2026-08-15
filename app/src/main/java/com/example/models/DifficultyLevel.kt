@@ -1,7 +1,7 @@
 package com.example.models
 
 /**
- * Single source of truth for career difficulty across setup, settings and simulation.
+ * Single source of truth for career difficulty used by setup, settings and simulation.
  * The persisted value remains an Int for backward-compatible saves.
  */
 enum class DifficultyLevel(
