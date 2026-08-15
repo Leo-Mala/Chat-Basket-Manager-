@@ -1,6 +1,7 @@
 package com.example.domain.trade
 
 import com.example.domain.rules.TradeRules
+import com.example.domain.season.FranchiseStrategyManager
 import com.example.models.NbaTeam
 import com.example.models.Player
 import com.example.models.PlayerContract
@@ -25,7 +26,8 @@ class AiTradeManager {
         val teamB: NbaTeam,
         val playerA: Player,
         val playerB: Player,
-        val gain: Int
+        val gain: Int,
+        val strategicFit: Int
     )
 
     private val positions = listOf("PG", "SG", "SF", "PF", "C")
@@ -37,7 +39,8 @@ class AiTradeManager {
         priorityTeamNames: List<String>,
         maxTrades: Int = 6,
         maxOverallDifference: Int = 3,
-        minimumBalanceGain: Int = 1
+        minimumBalanceGain: Int = 1,
+        policiesByTeamName: Map<String, FranchiseStrategyManager.Policy> = emptyMap()
     ): Result {
         require(maxTrades >= 0) { "maxTrades must be non-negative" }
         require(maxOverallDifference >= 0) { "maxOverallDifference must be non-negative" }
@@ -52,8 +55,9 @@ class AiTradeManager {
             if (trades.size >= maxTrades) break
             if (teamName == userTeamName || teamName in usedTeams) continue
             val teamA = teamByName[teamName] ?: continue
+            val policyA = policiesByTeamName[teamName]
             val needA = weakestPosition(teamA)
-            val protectedA = teamA.players.sortedByDescending { it.overall }.take(2).map { it.id }.toSet()
+            val protectedA = protectedCore(teamA, policyA)
 
             val bestCandidate = orderedNames.asSequence()
                 .filter { partnerName ->
@@ -63,9 +67,10 @@ class AiTradeManager {
                 }
                 .mapNotNull { partnerName ->
                     val teamB = teamByName[partnerName] ?: return@mapNotNull null
+                    val policyB = policiesByTeamName[partnerName]
                     val needB = weakestPosition(teamB)
                     if (needA == needB) return@mapNotNull null
-                    val protectedB = teamB.players.sortedByDescending { it.overall }.take(2).map { it.id }.toSet()
+                    val protectedB = protectedCore(teamB, policyB)
                     bestMutualTrade(
                         teamA = teamA,
                         teamB = teamB,
@@ -75,11 +80,14 @@ class AiTradeManager {
                         protectedA = protectedA,
                         protectedB = protectedB,
                         maxOverallDifference = maxOverallDifference,
-                        minimumBalanceGain = minimumBalanceGain
+                        minimumBalanceGain = minimumBalanceGain,
+                        policyA = policyA,
+                        policyB = policyB
                     )
                 }
                 .sortedWith(
                     compareByDescending<Candidate> { it.gain }
+                        .thenByDescending { it.strategicFit }
                         .thenBy { abs(it.playerA.overall - it.playerB.overall) }
                         .thenBy { it.teamB.name }
                         .thenBy { it.playerA.id }
@@ -117,7 +125,9 @@ class AiTradeManager {
         protectedA: Set<Int>,
         protectedB: Set<Int>,
         maxOverallDifference: Int,
-        minimumBalanceGain: Int
+        minimumBalanceGain: Int,
+        policyA: FranchiseStrategyManager.Policy?,
+        policyB: FranchiseStrategyManager.Policy?
     ): Candidate? {
         val beforeA = balanceScore(teamA)
         val beforeB = balanceScore(teamB)
@@ -147,15 +157,56 @@ class AiTradeManager {
                 val gainA = afterA - beforeA
                 val gainB = afterB - beforeB
                 if (gainA < minimumBalanceGain || gainB < minimumBalanceGain) return@mapNotNull null
-                Candidate(teamA, teamB, playerA, playerB, gainA + gainB)
+                Candidate(
+                    teamA = teamA,
+                    teamB = teamB,
+                    playerA = playerA,
+                    playerB = playerB,
+                    gain = gainA + gainB,
+                    strategicFit = strategyFit(policyA, outgoing = playerA, incoming = playerB) +
+                        strategyFit(policyB, outgoing = playerB, incoming = playerA)
+                )
             }
             .sortedWith(
                 compareByDescending<Candidate> { it.gain }
+                    .thenByDescending { it.strategicFit }
                     .thenBy { abs(it.playerA.overall - it.playerB.overall) }
                     .thenBy { it.playerA.id }
                     .thenBy { it.playerB.id }
             )
             .firstOrNull()
+    }
+
+    private fun protectedCore(
+        team: NbaTeam,
+        policy: FranchiseStrategyManager.Policy?
+    ): Set<Int> {
+        val protectedCount = when (policy?.strategy) {
+            FranchiseStrategyManager.Strategy.CONTENDER -> 3
+            FranchiseStrategyManager.Strategy.REBUILD -> 1
+            FranchiseStrategyManager.Strategy.YOUNG_CORE -> 2
+            FranchiseStrategyManager.Strategy.AGING_CORE -> 1
+            FranchiseStrategyManager.Strategy.BALANCED,
+            null -> 2
+        }
+        return team.players
+            .sortedWith(compareByDescending<Player> { it.overall }.thenBy { it.age }.thenBy { it.id })
+            .take(protectedCount)
+            .map { it.id }
+            .toSet()
+    }
+
+    private fun strategyFit(
+        policy: FranchiseStrategyManager.Policy?,
+        outgoing: Player,
+        incoming: Player
+    ): Int = when (policy?.strategy) {
+        FranchiseStrategyManager.Strategy.CONTENDER -> incoming.overall - outgoing.overall
+        FranchiseStrategyManager.Strategy.REBUILD,
+        FranchiseStrategyManager.Strategy.YOUNG_CORE,
+        FranchiseStrategyManager.Strategy.AGING_CORE -> outgoing.age - incoming.age
+        FranchiseStrategyManager.Strategy.BALANCED,
+        null -> 0
     }
 
     private fun tradeEligible(player: Player, contracts: Map<Int, PlayerContract>): Boolean {
