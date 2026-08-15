@@ -1,0 +1,109 @@
+name: Patch box score persistence
+
+on:
+  push:
+    branches:
+      - audit/boxscore-persistence-sides
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: audit/boxscore-persistence-sides
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Apply persistence fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              path.write_text(text.replace(old, new, 1))
+
+          entities = Path('app/src/main/java/com/example/data/local/NormalizedEntities.kt')
+          replace_once(
+              entities,
+              '''data class PlayerGameStatEntity(\n    val gameId: String,\n    val playerId: Int,\n    val points: Int,''',
+              '''data class PlayerGameStatEntity(\n    val gameId: String,\n    val playerId: Int,\n    val teamId: String?,\n    val points: Int,''',
+              'player stat team identity'
+          )
+
+          database = Path('app/src/main/java/com/example/data/local/BasketDatabase.kt')
+          replace_once(database, '    version = 6,', '    version = 7,', 'database version')
+          replace_once(
+              database,
+              '''        internal val MIGRATION_5_6 = object : Migration(5, 6) {\n            override fun migrate(db: SupportSQLiteDatabase) {\n                db.execSQL("ALTER TABLE game_state ADD COLUMN playoffResultJson TEXT")\n            }\n        }\n\n        fun getInstance(context: Context): BasketDatabase =''',
+              '''        internal val MIGRATION_5_6 = object : Migration(5, 6) {\n            override fun migrate(db: SupportSQLiteDatabase) {\n                db.execSQL("ALTER TABLE game_state ADD COLUMN playoffResultJson TEXT")\n            }\n        }\n\n        internal val MIGRATION_6_7 = object : Migration(6, 7) {\n            override fun migrate(db: SupportSQLiteDatabase) {\n                db.execSQL("ALTER TABLE player_game_stats ADD COLUMN teamId TEXT")\n                // Version 6 did not persist which side produced a stat row. Backfill only\n                // when the player's current team still matches one of the game's participants.\n                // Ambiguous legacy rows remain null instead of being duplicated on both sides.\n                db.execSQL(\n                    """\n                    UPDATE player_game_stats\n                    SET teamId = (\n                        SELECT CASE\n                            WHEN p.teamId = g.homeTeamId THEN g.homeTeamId\n                            WHEN p.teamId = g.awayTeamId THEN g.awayTeamId\n                            ELSE NULL\n                        END\n                        FROM players p\n                        JOIN games g ON g.id = player_game_stats.gameId\n                        WHERE p.id = player_game_stats.playerId\n                    )\n                    """.trimIndent()\n                )\n            }\n        }\n\n        fun getInstance(context: Context): BasketDatabase =''',
+              'migration 6 to 7'
+          )
+          replace_once(
+              database,
+              '.addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)',
+              '.addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)',
+              'migration registration'
+          )
+
+          repository = Path('app/src/main/java/com/example/data/repository/GameStateRepository.kt')
+          replace_once(
+              repository,
+              '''                result.homeStats.map { (p, st) -> st.toEntity(gameId, p.id) } + result.awayStats.map { (p, st) -> st.toEntity(gameId, p.id) }''',
+              '''                result.homeStats.map { (p, st) -> st.toEntity(gameId, p.id, teamId(result.homeTeam)) } +\n                    result.awayStats.map { (p, st) -> st.toEntity(gameId, p.id, teamId(result.awayTeam)) }''',
+              'persist stat team identity'
+          )
+          replace_once(
+              repository,
+              '''                    val homeStats = stats[g.id].orEmpty().mapNotNull { row -> playerById[row.playerId]?.let { p -> p to row.toModel() } }.toMap()\n                    val awayStats = stats[g.id].orEmpty().mapNotNull { row -> playerById[row.playerId]?.let { p -> p to row.toModel() } }.toMap()''',
+              '''                    val gameStats = stats[g.id].orEmpty()\n                    val homeStats = gameStats.filter { it.teamId == g.homeTeamId }\n                        .mapNotNull { row -> playerById[row.playerId]?.let { p -> p to row.toModel() } }.toMap()\n                    val awayStats = gameStats.filter { it.teamId == g.awayTeamId }\n                        .mapNotNull { row -> playerById[row.playerId]?.let { p -> p to row.toModel() } }.toMap()''',
+              'restore stat team identity'
+          )
+          replace_once(
+              repository,
+              '''    private fun GameSimulator.PlayerStats.toEntity(gameId: String, playerId: Int) = PlayerGameStatEntity(gameId, playerId, points, rebounds, assists, steals, blocks, turnovers, plusMinus)''',
+              '''    private fun GameSimulator.PlayerStats.toEntity(gameId: String, playerId: Int, teamId: String) =\n        PlayerGameStatEntity(gameId, playerId, teamId, points, rebounds, assists, steals, blocks, turnovers, plusMinus)''',
+              'stat entity mapper'
+          )
+
+          roundtrip = Path('app/src/androidTest/java/com/example/BoxScorePersistenceRoundTripTest.kt')
+          roundtrip.write_text('''package com.example\n\nimport androidx.room.Room\nimport androidx.test.ext.junit.runners.AndroidJUnit4\nimport androidx.test.platform.app.InstrumentationRegistry\nimport com.example.data.NbaDataGenerator\nimport com.example.data.local.BasketDatabase\nimport com.example.data.repository.GameStateRepository\nimport com.example.models.*\nimport com.example.simulator.GameSimulator\nimport com.google.gson.GsonBuilder\nimport kotlinx.coroutines.runBlocking\nimport org.junit.After\nimport org.junit.Assert.assertEquals\nimport org.junit.Assert.assertFalse\nimport org.junit.Assert.assertTrue\nimport org.junit.Test\nimport org.junit.runner.RunWith\n\n@RunWith(AndroidJUnit4::class)\nclass BoxScorePersistenceRoundTripTest {\n    private val context = InstrumentationRegistry.getInstrumentation().targetContext\n    private val db = Room.inMemoryDatabaseBuilder(context, BasketDatabase::class.java)\n        .allowMainThreadQueries()\n        .build()\n    private val gson = GsonBuilder().enableComplexMapKeySerialization().create()\n    private val repository = GameStateRepository(context, db)\n\n    @After\n    fun close() = db.close()\n\n    @Test\n    fun homeAndAwayPlayerStatsKeepTheirSideAfterRoomRoundTrip() = runBlocking {\n        val teams = NbaDataGenerator.getAllTeams()\n        val home = teams[0]\n        val away = teams[1]\n        val homePlayer = home.players.first()\n        val awayPlayer = away.players.first()\n        val season = Season(\n            teams = teams,\n            currentDay = 1,\n            gamesPlayed = 1,\n            seasonNumber = 1,\n            nextPlayerId = teams.flatMap { it.players }.maxOf { it.id } + 1\n        ).apply {\n            userTeamName = home.name\n            history += GameSimulator.GameResult(\n                homeTeam = home,\n                awayTeam = away,\n                homeScore = 112,\n                awayScore = 99,\n                attendance = 18_000,\n                homeStats = mapOf(homePlayer to GameSimulator.PlayerStats(31, 7, 8, 2, 1, 3, 14)),\n                awayStats = mapOf(awayPlayer to GameSimulator.PlayerStats(19, 5, 4, 1, 0, 2, -14)),\n                injuries = emptyList(),\n                narration = "box-score-round-trip"\n            )\n        }\n\n        repository.save(snapshot(season, home))\n        val loaded = requireNotNull(repository.load())\n        val loadedSeason = gson.fromJson(loaded.seasonJson, Season::class.java)\n        val game = loadedSeason.history.single()\n\n        assertEquals(setOf(homePlayer.id), game.homeStats.keys.map { it.id }.toSet())\n        assertEquals(setOf(awayPlayer.id), game.awayStats.keys.map { it.id }.toSet())\n        assertFalse(game.homeStats.keys.any { it.id == awayPlayer.id })\n        assertFalse(game.awayStats.keys.any { it.id == homePlayer.id })\n        assertEquals(31, game.homeStats.entries.single().value.points)\n        assertEquals(19, game.awayStats.entries.single().value.points)\n\n        val persisted = db.playerGameStatDao().all()\n        assertTrue(persisted.any { it.playerId == homePlayer.id && it.teamId == home.abbreviation })\n        assertTrue(persisted.any { it.playerId == awayPlayer.id && it.teamId == away.abbreviation })\n    }\n\n    private fun snapshot(season: Season, managed: NbaTeam) = GameStateRepository.GameStateSnapshot(\n        teamJson = gson.toJson(managed),\n        coachJson = gson.toJson(Coach(1, "Box Coach", 80, 80, 80, 350_000, 3)),\n        financeJson = gson.toJson(Finance(120_000_000)),\n        tacticsJson = gson.toJson(Tactics()),\n        seasonJson = gson.toJson(season),\n        historyJson = gson.toJson(HistoryManager()),\n        awardsJson = null,\n        startingFiveJson = gson.toJson(managed.players.take(5)),\n        freeAgentsJson = gson.toJson(emptyList<Player>()),\n        draftRookiesJson = gson.toJson(emptyList<Player>()),\n        contractsJson = gson.toJson(emptyList<PlayerContract>()),\n        staffMarketJson = gson.toJson(emptyList<StaffMember>()),\n        notificationsJson = gson.toJson(emptyList<AssistantCoachNotification>()),\n        teamStaffJson = gson.toJson(TeamStaff()),\n        facilitiesJson = gson.toJson(TeamFacilities()),\n        financeAdvancedJson = gson.toJson(FinanceAdvanced()),\n        newsFeedJson = gson.toJson(emptyList<News>()),\n        latestBoxScoreJson = null,\n        playoffResultJson = null,\n        difficulty = 2,\n        injuriesEnabled = true,\n        autoSubstitutionsEnabled = true\n    )\n}\n''')
+
+          migration_test = Path('app/src/androidTest/java/com/example/BoxScoreStatSideMigrationTest.kt')
+          migration_test.write_text('''package com.example\n\nimport androidx.sqlite.db.SupportSQLiteDatabase\nimport androidx.sqlite.db.SupportSQLiteOpenHelper\nimport androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory\nimport androidx.test.ext.junit.runners.AndroidJUnit4\nimport androidx.test.platform.app.InstrumentationRegistry\nimport com.example.data.local.BasketDatabase\nimport org.junit.Assert.assertEquals\nimport org.junit.Assert.assertTrue\nimport org.junit.Test\nimport org.junit.runner.RunWith\n\n@RunWith(AndroidJUnit4::class)\nclass BoxScoreStatSideMigrationTest {\n    @Test\n    fun migration6To7AddsAndBackfillsStatTeamIdentity() {\n        val context = InstrumentationRegistry.getInstrumentation().targetContext\n        val name = "migration-box-score-side-test"\n        context.deleteDatabase(name)\n        val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)\n            .name(name)\n            .callback(object : SupportSQLiteOpenHelper.Callback(1) {\n                override fun onCreate(db: SupportSQLiteDatabase) = Unit\n                override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit\n            })\n            .build()\n        val helper = FrameworkSQLiteOpenHelperFactory().create(configuration)\n        try {\n            val db = helper.writableDatabase\n            BasketDatabase.MIGRATION_1_2.migrate(db)\n            db.execSQL("CREATE TABLE IF NOT EXISTS game_state (id INTEGER NOT NULL PRIMARY KEY)")\n            BasketDatabase.MIGRATION_2_3.migrate(db)\n            BasketDatabase.MIGRATION_3_4.migrate(db)\n            BasketDatabase.MIGRATION_4_5.migrate(db)\n            BasketDatabase.MIGRATION_5_6.migrate(db)\n\n            db.execSQL("INSERT INTO teams VALUES ('HOM','Home','Home','HOM','East','Arena','Home',10000,2020)")\n            db.execSQL("INSERT INTO teams VALUES ('AWY','Away','Away','AWY','West','Arena','Away',10000,2020)")\n            db.execSQL(\n                "INSERT INTO players (id,teamId,poolType,active,startingFive,name,position,overall,shooting,defense,rebound,passing,athleticism,age,xp,trainings,injured,injuryDays,careerPoints,careerRebounds,careerAssists,careerSteals,careerBlocks,careerGames,championships,mvps,seasonPoints,seasonRebounds,seasonAssists,seasonSteals,seasonBlocks,seasonGames) " +\n                    "VALUES (1,'HOM','ROSTER',1,1,'Home Player','PG',80,80,80,80,80,80,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)"\n            )\n            db.execSQL("INSERT INTO games VALUES ('g1',1,'HOM','AWY',110,100,18000,'migration',NULL)")\n            db.execSQL("INSERT INTO player_game_stats VALUES ('g1',1,25,5,6,1,0,2,8)")\n\n            BasketDatabase.MIGRATION_6_7.migrate(db)\n\n            db.query("PRAGMA table_info(player_game_stats)").use { cursor ->\n                val nameIndex = cursor.getColumnIndexOrThrow("name")\n                var found = false\n                while (cursor.moveToNext()) if (cursor.getString(nameIndex) == "teamId") found = true\n                assertTrue("Missing player_game_stats.teamId after migration 6->7", found)\n            }\n            db.query("SELECT teamId FROM player_game_stats WHERE gameId = 'g1' AND playerId = 1").use { cursor ->\n                assertTrue(cursor.moveToFirst())\n                assertEquals("HOM", cursor.getString(0))\n            }\n        } finally {\n            helper.close()\n            context.deleteDatabase(name)\n        }\n    }\n}\n''')
+          PY
+
+          chmod +x gradlew
+          ./gradlew --no-daemon kspDebugKotlin
+
+          rm .github/workflows/patch-boxscore-persistence.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/src/main/java/com/example/data/local/NormalizedEntities.kt \
+                  app/src/main/java/com/example/data/local/BasketDatabase.kt \
+                  app/src/main/java/com/example/data/repository/GameStateRepository.kt \
+                  app/src/androidTest/java/com/example/BoxScorePersistenceRoundTripTest.kt \
+                  app/src/androidTest/java/com/example/BoxScoreStatSideMigrationTest.kt \
+                  .github/workflows/patch-boxscore-persistence.yml
+          test -f app/schemas/com.example.data.local.BasketDatabase/7.json
+          git add app/schemas/com.example.data.local.BasketDatabase/7.json
+          git commit -m 'Preserve box score team identity in Room'
+          git push origin HEAD:audit/boxscore-persistence-sides
