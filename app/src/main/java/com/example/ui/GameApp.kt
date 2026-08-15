@@ -161,7 +161,8 @@ fun BasketManagerGameApp() {
                             showMainMenu = false
                         },
                         onNewCareer = {
-                            viewModel.clearSavedGame(context)
+                            // Opening setup must never destroy an existing career. The old save
+                            // is replaced only when startNewGame() is actually confirmed.
                             showMainMenu = false
                         },
                         onSettings = {
