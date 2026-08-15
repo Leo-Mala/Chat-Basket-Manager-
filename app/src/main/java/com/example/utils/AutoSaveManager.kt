@@ -5,6 +5,7 @@ import com.example.data.repository.GameStateRepository
 import com.example.models.*
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -12,7 +13,11 @@ import kotlinx.coroutines.sync.withLock
 object AutoSaveManager {
     private lateinit var repository: GameStateRepository
     private val saveMutex = Mutex()
-    val gson: Gson = GsonBuilder().enableComplexMapKeySerialization().create()
+    private val staffMarketType = object : TypeToken<List<StaffMember>>() {}.type
+    val gson: Gson = GsonBuilder()
+        .enableComplexMapKeySerialization()
+        .registerTypeAdapter(StaffMember::class.java, StaffMemberJsonAdapter())
+        .create()
 
     fun init(context: Context) { repository = GameStateRepository(context.applicationContext) }
     fun getRepository(context: Context): GameStateRepository {
@@ -36,7 +41,7 @@ object AutoSaveManager {
             tacticsJson = tactics?.let(gson::toJson), seasonJson = season?.let(gson::toJson), historyJson = history?.let(gson::toJson),
             awardsJson = awards?.let(gson::toJson), startingFiveJson = gson.toJson(startingFive.map { it.copy() }),
             freeAgentsJson = gson.toJson(freeAgents.map { it.copy() }), draftRookiesJson = gson.toJson(draftRookies.map { it.copy() }),
-            contractsJson = gson.toJson(contracts), staffMarketJson = gson.toJson(availableStaffMarket), notificationsJson = gson.toJson(assistantNotifications.toList()),
+            contractsJson = gson.toJson(contracts), staffMarketJson = gson.toJson(availableStaffMarket, staffMarketType), notificationsJson = gson.toJson(assistantNotifications.toList()),
             teamStaffJson = teamStaff?.let(gson::toJson), facilitiesJson = teamFacilities?.let(gson::toJson),
             financeAdvancedJson = financeAdvanced?.let(gson::toJson), newsFeedJson = gson.toJson(newsFeed.toList()),
             latestBoxScoreJson = latestBoxScore?.let(gson::toJson), playoffResultJson = playoffResult?.let(gson::toJson), difficulty = difficulty,
