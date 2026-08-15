@@ -61,9 +61,7 @@ class OffseasonManager(
             policiesByTeamName = policies
         )
         val expiredIds = renewalResult.unrenewedExpiredPlayerIds
-        val expiredPlayers = currentSeason.teams
-            .flatMap(NbaTeam::players)
-            .filter { it.id in expiredIds }
+        val expiredPlayers = currentSeason.teams.flatMap(NbaTeam::players).filter { it.id in expiredIds }
 
         currentSeason.teams = currentSeason.teams.map { team ->
             team.copy(players = team.players.filterNot { it.id in expiredIds })
@@ -116,7 +114,8 @@ class OffseasonManager(
             teams = advanced.teams,
             rookies = cpuDraftClass,
             userTeamName = advanced.userTeamName,
-            priorityTeamNames = priorityTeamNames
+            priorityTeamNames = priorityTeamNames,
+            policiesByTeamName = policies
         )
         advanced.teams = aiDraftResult.teams
 
@@ -124,15 +123,8 @@ class OffseasonManager(
         advanced.teams.forEach { team ->
             team.players.forEach { player ->
                 val existing = nextContracts[player.id]
-                if (existing != null) {
-                    nextContracts[player.id] = existing.copy(teamId = team.abbreviation)
-                } else {
-                    nextContracts[player.id] = contractManager.create(
-                        player,
-                        team.abbreviation,
-                        contractManager.recommendedOffer(player)
-                    )
-                }
+                if (existing != null) nextContracts[player.id] = existing.copy(teamId = team.abbreviation)
+                else nextContracts[player.id] = contractManager.create(player, team.abbreviation, contractManager.recommendedOffer(player))
             }
         }
 
@@ -143,8 +135,7 @@ class OffseasonManager(
             season = advanced,
             contracts = nextContracts,
             freeAgents = FreeAgencyRules.normalizeMarket(
-                aiFreeAgencyResult.freeAgents + agedExpiredPlayers +
-                    aiDraftResult.releasedPlayers + aiDraftResult.undraftedRookies
+                aiFreeAgencyResult.freeAgents + agedExpiredPlayers + aiDraftResult.releasedPlayers + aiDraftResult.undraftedRookies
             ),
             activity = Activity(
                 cpuTrades = aiTradeResult.trades.size,
