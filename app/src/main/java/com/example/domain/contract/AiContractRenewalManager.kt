@@ -54,10 +54,19 @@ class AiContractRenewalManager(
                 )
                 .take(teamMaxRenewals)
                 .forEach { player ->
+                    val marketOffer = contractManager.recommendedOffer(player)
+                    val renewalOffer = if (player.overall >= 90) {
+                        // CPU teams pay a modest retention premium for proven stars. This keeps
+                        // long-lived star contracts economically distinct from declining rotation
+                        // contracts without changing the user's negotiation rules.
+                        marketOffer.copy(salary = marketOffer.salary * 110L / 100L)
+                    } else {
+                        marketOffer
+                    }
                     nextContracts[player.id] = contractManager.create(
                         player,
                         team.abbreviation,
-                        contractManager.recommendedOffer(player)
+                        renewalOffer
                     )
                     renewed += player.id
                 }
