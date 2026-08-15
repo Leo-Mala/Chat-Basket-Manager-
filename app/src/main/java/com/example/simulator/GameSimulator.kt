@@ -14,7 +14,8 @@ data class SimulationConfig(
     val coach: Coach? = null,
     val tactics: Tactics = Tactics(),
     val managedTeam: NbaTeam? = null,
-    val finance: Finance = Finance()
+    val finance: Finance = Finance(),
+    val effectsEnabled: Boolean = true
 ) : Serializable
 
 class GameSimulator(
@@ -22,9 +23,9 @@ class GameSimulator(
     private val config: SimulationConfig = SimulationConfig()
 ) : Serializable {
     @Transient
-    private val soundManager = SoundManager(context)
+    private val soundManager = if (config.effectsEnabled) SoundManager(context) else null
     @Transient
-    private val notificationHelper = NotificationHelper(context)
+    private val notificationHelper = if (config.effectsEnabled) NotificationHelper(context) else null
     @Transient
     private val engine = MatchSimulationEngine()
 
@@ -75,7 +76,7 @@ class GameSimulator(
     )
 
     fun release() {
-        soundManager.release()
+        soundManager?.release()
     }
 
     fun simulate(home: NbaTeam, away: NbaTeam): GameResult {
@@ -132,7 +133,7 @@ class GameSimulator(
                 }
             }
             injuries.forEach { injury ->
-                notificationHelper.sendNotification(
+                notificationHelper?.sendNotification(
                     "Lesão: ${injury.player.name}",
                     "${injury.player.name} está lesionado por ${injury.daysOut} jogos."
                 )
@@ -278,7 +279,7 @@ class GameSimulator(
         )
 
         try {
-            if (homeScore > awayScore) soundManager.playBasket() else soundManager.playBuzzer()
+            if (homeScore > awayScore) soundManager?.playBasket() else soundManager?.playBuzzer()
         } catch (_: Exception) {
             // Audio failure must never break a simulation.
         }

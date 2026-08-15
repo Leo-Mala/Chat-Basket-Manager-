@@ -415,6 +415,7 @@ fun DashboardTab(viewModel: GameViewModel) {
                             viewModel.simulateSeasonRemaining(context)
                         },
                         modifier = Modifier.fillMaxWidth(),
+                        enabled = seasonSimProgress == null,
                         colors = ButtonDefaults.buttonColors(containerColor = ChampionshipGold),
                         shape = RoundedCornerShape(8.dp)
                     ) {
