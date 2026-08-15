@@ -1,77 +1,4 @@
-from pathlib import Path
-
-path = Path('app/src/main/java/com/example/data/repository/GameStateRepository.kt')
-text = path.read_text()
-
-old = '''            val sid = s.seasonNumber
-            db.seasonDao().upsert(s.toEntity())
-
-            // A save is an authoritative snapshot of the current season. Remove any
-            // previously persisted rows for this season before rebuilding them so a
-            // shorter/rolled-back snapshot cannot resurrect stale games or standings.
-            db.playerGameStatDao().deleteForSeason(sid)
-            db.gameInjuryDao().deleteForSeason(sid)
-            db.gameDao().deleteForSeason(sid)
-            db.standingDao().deleteForSeason(sid)
-'''
-new = '''            val sid = s.seasonNumber
-
-            // Full box-score detail is useful for the active season only. Completed seasons are
-            // already represented by season_history*, so retaining every historical game/stat row
-            // makes save/load cost grow without adding gameplay value. Child rows must be pruned
-            // before games because their season relationship is resolved through games.
-            db.playerGameStatDao().deleteOutsideSeason(sid)
-            db.gameInjuryDao().deleteOutsideSeason(sid)
-            db.gameDao().deleteOutsideSeason(sid)
-            db.standingDao().deleteOutsideSeason(sid)
-            db.seasonDao().deleteOutsideSeason(sid)
-            db.seasonDao().upsert(s.toEntity())
-
-            // A save is an authoritative snapshot of the current season. Remove any
-            // previously persisted rows for this season before rebuilding them so a
-            // shorter/rolled-back snapshot cannot resurrect stale games or standings.
-            db.playerGameStatDao().deleteForSeason(sid)
-            db.gameInjuryDao().deleteForSeason(sid)
-            db.gameDao().deleteForSeason(sid)
-            db.standingDao().deleteForSeason(sid)
-'''
-assert old in text, 'persistCore season block not found'
-text = text.replace(old, new, 1)
-
-old = '        val standings = db.standingDao().all().filter { it.seasonId == current.id }\n'
-new = '        val standings = db.standingDao().forSeason(current.id)\n'
-assert old in text, 'validation standings query not found'
-text = text.replace(old, new, 1)
-
-old = '''        val seasonEntities = db.seasonDao().all()
-        val seasonEntity = seasonEntities.maxByOrNull { it.seasonNumber }
-        val standings = db.standingDao().all()
-        val games = db.gameDao().all()
-        val stats = db.playerGameStatDao().all().groupBy { it.gameId }
-        val injuries = db.gameInjuryDao().all().groupBy { it.gameId }
-'''
-new = '''        val seasonEntity = db.seasonDao().current()
-        val currentSeasonId = seasonEntity?.id
-        val standings = currentSeasonId?.let { db.standingDao().forSeason(it) }.orEmpty()
-        val games = currentSeasonId?.let { db.gameDao().forSeason(it) }.orEmpty()
-        val stats = currentSeasonId?.let { db.playerGameStatDao().forSeason(it) }.orEmpty().groupBy { it.gameId }
-        val injuries = currentSeasonId?.let { db.gameInjuryDao().forSeason(it) }.orEmpty().groupBy { it.gameId }
-'''
-assert old in text, 'normalizedSnapshot bulk query block not found'
-text = text.replace(old, new, 1)
-
-old = '                this.standings.putAll(standings.filter { it.seasonId == se.id }.associate { row ->'
-new = '                this.standings.putAll(standings.associate { row ->'
-assert old in text, 'current standings reconstruction filter not found'
-text = text.replace(old, new, 1)
-
-old = '                history.addAll(games.filter { it.seasonId == se.id }.mapNotNull { g ->'
-new = '                history.addAll(games.mapNotNull { g ->'
-assert old in text, 'current games reconstruction filter not found'
-text = text.replace(old, new, 1)
-path.write_text(text)
-
-Path('app/src/androidTest/java/com/example/RoomGrowthPerformanceTest.kt').write_text(r'''package com.example
+package com.example
 
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -224,4 +151,3 @@ class RoomGrowthPerformanceTest {
         autoSubstitutionsEnabled = true
     )
 }
-''')
