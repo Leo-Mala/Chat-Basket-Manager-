@@ -75,7 +75,6 @@ replacements.append((
 '''
 ))
 
-# Safe for every quarter: resolvingClutch is only true on Q4 after the clutch action.
 replacements.append((
 'val subLog = if (isUserGame) viewModel.performAutoSubstitution(currentQuarter) else ""',
 'val subLog = if (isUserGame && !resolvingClutch) viewModel.performAutoSubstitution(currentQuarter) else ""'
@@ -109,18 +108,8 @@ replacements.append((
 ))
 
 replacements.append((
-'''                    if (isUserGame && !hasUsedLiveCoaching) {
-                        isLiveCoachingActive = true
-                        narration = "⏱️ MODO TÉCNICO EM TEMPO REAL!\nFaltam 15 segundos no 4º Quarto! Placar: ${team.name} $userScore x $oppScore ${opponent.name}.\nO jogo está acirrado! Faça sua chamada tática decisiva na prancheta!"
-                        return@LaunchedEffect
-                    }
-''',
-'''                    if (shouldOfferClutch) {
-                        isLiveCoachingActive = true
-                        narration = "⏱️ MODO TÉCNICO EM TEMPO REAL!\nFaltam 15 segundos no 4º Quarto! Placar: ${team.name} $userScore x $oppScore ${opponent.name}.\nEscolha a chamada tática para a última posse."
-                        return@LaunchedEffect
-                    }
-'''
+'                    if (isUserGame && !hasUsedLiveCoaching) {\n',
+'                    if (shouldOfferClutch) {\n'
 ))
 
 replacements.append((
@@ -140,7 +129,6 @@ for old, new in replacements:
     count = text.count(old)
     if count == 0:
         raise SystemExit(f'Expected block not found:\n{old[:160]}')
-    # The subLog replacement is intentionally applied to both regular branches.
     if old.startswith('val subLog = if (isUserGame)'):
         text = text.replace(old, new)
     else:
