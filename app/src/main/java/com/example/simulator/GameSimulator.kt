@@ -2,7 +2,6 @@ package com.example.simulator
 
 import android.content.Context
 import com.example.models.*
-import com.example.utils.NotificationHelper
 import com.example.utils.SoundManager
 import java.io.Serializable
 import kotlin.math.roundToInt
@@ -24,8 +23,6 @@ class GameSimulator(
 ) : Serializable {
     @Transient
     private val soundManager = if (config.effectsEnabled) SoundManager(context) else null
-    @Transient
-    private val notificationHelper = if (config.effectsEnabled) NotificationHelper(context) else null
     @Transient
     private val engine = MatchSimulationEngine()
 
@@ -131,12 +128,6 @@ class GameSimulator(
                     player.injuryDays = daysOut
                     injuries += Injury(player, daysOut)
                 }
-            }
-            injuries.forEach { injury ->
-                notificationHelper?.sendNotification(
-                    "Lesão: ${injury.player.name}",
-                    "${injury.player.name} está lesionado por ${injury.daysOut} jogos."
-                )
             }
         }
 
