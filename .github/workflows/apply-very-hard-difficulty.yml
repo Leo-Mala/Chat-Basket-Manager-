@@ -1,0 +1,39 @@
+name: Apply Very Hard Difficulty
+
+on:
+  push:
+    branches:
+      - feature/very-hard-difficulty
+    paths:
+      - scripts/apply-very-hard-difficulty.py
+      - .github/workflows/apply-very-hard-difficulty.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: python scripts/apply-very-hard-difficulty.py
+
+      - name: Commit feature changes
+        run: |
+          rm -f scripts/apply-very-hard-difficulty.py .github/workflows/apply-very-hard-difficulty.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/example/ui/SetupScreen.kt \
+                  app/src/main/java/com/example/simulator/SimulationRules.kt \
+                  app/src/test/java/com/example/simulation/SimulationRulesTest.kt \
+                  scripts/apply-very-hard-difficulty.py \
+                  .github/workflows/apply-very-hard-difficulty.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "Add very hard difficulty level"
+          git push origin HEAD:feature/very-hard-difficulty
