@@ -147,6 +147,16 @@ class GameStateRepository(
 
         season?.let { s ->
             val sid = s.seasonNumber
+
+            // Full box-score detail is useful for the active season only. Completed seasons are
+            // already represented by season_history*, so retaining every historical game/stat row
+            // makes save/load cost grow without adding gameplay value. Child rows must be pruned
+            // before games because their season relationship is resolved through games.
+            db.playerGameStatDao().deleteOutsideSeason(sid)
+            db.gameInjuryDao().deleteOutsideSeason(sid)
+            db.gameDao().deleteOutsideSeason(sid)
+            db.standingDao().deleteOutsideSeason(sid)
+            db.seasonDao().deleteOutsideSeason(sid)
             db.seasonDao().upsert(s.toEntity())
 
             // A save is an authoritative snapshot of the current season. Remove any
@@ -209,7 +219,7 @@ class GameStateRepository(
             "Incomplete normalized save: active player references a missing team"
         }
 
-        val standings = db.standingDao().all().filter { it.seasonId == current.id }
+        val standings = db.standingDao().forSeason(current.id)
         check(standings.size == teams.size && standings.map { it.teamId }.toSet() == teamIds) {
             "Incomplete normalized save: current standings do not cover every team"
         }
@@ -228,12 +238,12 @@ class GameStateRepository(
         val coaches = db.coachDao().get()
         val finance = db.financeDao().get()
         val tactics = db.tacticsDao().get()
-        val seasonEntities = db.seasonDao().all()
-        val seasonEntity = seasonEntities.maxByOrNull { it.seasonNumber }
-        val standings = db.standingDao().all()
-        val games = db.gameDao().all()
-        val stats = db.playerGameStatDao().all().groupBy { it.gameId }
-        val injuries = db.gameInjuryDao().all().groupBy { it.gameId }
+        val seasonEntity = db.seasonDao().current()
+        val currentSeasonId = seasonEntity?.id
+        val standings = currentSeasonId?.let { db.standingDao().forSeason(it) }.orEmpty()
+        val games = currentSeasonId?.let { db.gameDao().forSeason(it) }.orEmpty()
+        val stats = currentSeasonId?.let { db.playerGameStatDao().forSeason(it) }.orEmpty().groupBy { it.gameId }
+        val injuries = currentSeasonId?.let { db.gameInjuryDao().forSeason(it) }.orEmpty().groupBy { it.gameId }
         val award = db.awardDao().all().maxByOrNull { it.seasonId }
         val contracts = db.contractDao().all().map { it.toModel() }
         val historyRows = db.seasonHistoryDao().all()
@@ -251,11 +261,11 @@ class GameStateRepository(
             Season(teamModels, se.currentDay, se.gamesPlayed, se.seasonNumber, se.currentMonth, se.currentYear, se.nextPlayerId).apply {
                 userTeamName = se.userTeamId?.let { id -> teamById[id]?.name }
                 this.standings.clear()
-                this.standings.putAll(standings.filter { it.seasonId == se.id }.associate { row ->
+                this.standings.putAll(standings.associate { row ->
                     val record = Season.SeasonRecord(row.wins, row.losses, row.gamesPlayed, row.totalPointsScored, row.totalPointsConceded)
                     (teamById[row.teamId]?.name ?: row.teamId) to record
                 })
-                history.addAll(games.filter { it.seasonId == se.id }.mapNotNull { g ->
+                history.addAll(games.mapNotNull { g ->
                     val home = teamById[g.homeTeamId] ?: return@mapNotNull null
                     val away = teamById[g.awayTeamId] ?: return@mapNotNull null
                     val homeStats = stats[g.id].orEmpty().mapNotNull { row -> playerById[row.playerId]?.let { p -> p to row.toModel() } }.toMap()
