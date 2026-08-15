@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SavedGameStartupRulesTest {
+    // Regression: optional metadata must never hide an otherwise recoverable saved career.
     @Test
     fun normalizedCareerDoesNotDisappearOnlyBecauseCoachPayloadIsMissing() {
         assertTrue(SavedGameStartupRules.hasRequiredCore(snapshot(team = "{}", season = "{}", coach = null)))
