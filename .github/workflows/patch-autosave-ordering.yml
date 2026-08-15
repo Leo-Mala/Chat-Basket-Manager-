@@ -1,0 +1,223 @@
+name: Patch autosave ordering hardening
+
+on:
+  push:
+    branches: [audit/autosave-ordering]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: audit/autosave-ordering
+      - name: Apply autosave coordination patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          vm = Path('app/src/main/java/com/example/GameViewModel.kt')
+          text = vm.read_text()
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              'import com.example.utils.CoachFeedbackGenerator\nimport com.example.utils.ToastUtils',
+              'import com.example.utils.CoachFeedbackGenerator\nimport com.example.utils.SaveRequestCoordinator\nimport com.example.utils.ToastUtils',
+              'SaveRequestCoordinator import'
+          )
+          replace_once('import java.util.concurrent.atomic.AtomicLong\n', '', 'AtomicLong import')
+          replace_once(
+              '    /** Serializes snapshot writes and invalidates stale saves after a career reset. */\n'
+              '    private val saveMutex = Mutex()\n'
+              '    private val saveGeneration = AtomicLong(0L)',
+              '    /** Serializes persistence and coalesces stale snapshots/reset races. */\n'
+              '    private val saveMutex = Mutex()\n'
+              '    private val saveCoordinator = SaveRequestCoordinator()',
+              'save coordinator fields'
+          )
+          replace_once(
+              '        // Invalidate every snapshot captured before this reset. The reset itself is\n'
+              '        // serialized by AutoSaveManager, so an older save can never overwrite the new career.\n'
+              '        val generation = saveGeneration.incrementAndGet()\n'
+              '        viewModelScope.launch(Dispatchers.IO) {\n'
+              '            AutoSaveManager.clearGameState()\n'
+              '            if (generation != saveGeneration.get()) return@launch\n'
+              '            withContext(Dispatchers.Main) {\n'
+              '                initializeNewGame(selectedTeamName, coachName, offSkill, defSkill, motSkill, selectedDifficulty)\n'
+              '            }\n'
+              '        }',
+              '        // Invalidate queued snapshots before clearing. Clear shares the same mutex as saves,\n'
+              '        // so an in-flight old snapshot must finish before the database is cleared.\n'
+              '        val resetToken = saveCoordinator.beginReset()\n'
+              '        viewModelScope.launch(Dispatchers.IO) {\n'
+              '            saveMutex.withLock { AutoSaveManager.clearGameState() }\n'
+              '            if (!saveCoordinator.isCurrentReset(resetToken)) return@launch\n'
+              '            withContext(Dispatchers.Main) {\n'
+              '                if (!saveCoordinator.finishReset(resetToken)) return@withContext\n'
+              '                initializeNewGame(selectedTeamName, coachName, offSkill, defSkill, motSkill, selectedDifficulty)\n'
+              '            }\n'
+              '        }',
+              'startNewGame reset ordering'
+          )
+          replace_once(
+              '    fun saveGame() {\n        val generation = saveGeneration.get()',
+              '    fun saveGame() {\n        val saveTicket = saveCoordinator.nextSave() ?: return',
+              'save ticket creation'
+          )
+          replace_once(
+              '                // A newer state has already been scheduled; skip this stale snapshot.\n'
+              '                if (generation != saveGeneration.get()) return@withLock',
+              '                // Only the newest snapshot in the current career may reach Room.\n'
+              '                if (!saveCoordinator.isCurrent(saveTicket)) return@withLock',
+              'stale save guard'
+          )
+          replace_once(
+              '    fun clearSavedGame(context: Context) {\n'
+              '        val generation = saveGeneration.incrementAndGet()\n'
+              '        viewModelScope.launch {\n'
+              '            withContext(Dispatchers.IO) { AutoSaveManager.clearGameState() }\n'
+              '            if (generation != saveGeneration.get()) return@launch\n'
+              '            resetCareerState()\n'
+              '            ToastUtils.showToast(context, "Jogo limpo!")\n'
+              '        }\n'
+              '    }',
+              '    fun clearSavedGame(context: Context) {\n'
+              '        val resetToken = saveCoordinator.beginReset()\n'
+              '        viewModelScope.launch {\n'
+              '            withContext(Dispatchers.IO) {\n'
+              '                saveMutex.withLock { AutoSaveManager.clearGameState() }\n'
+              '            }\n'
+              '            if (!saveCoordinator.isCurrentReset(resetToken)) return@launch\n'
+              '            if (!saveCoordinator.finishReset(resetToken)) return@launch\n'
+              '            resetCareerState()\n'
+              '            ToastUtils.showToast(context, "Jogo limpo!")\n'
+              '        }\n'
+              '    }',
+              'clearSavedGame reset ordering'
+          )
+          vm.write_text(text)
+
+          coordinator = Path('app/src/main/java/com/example/utils/SaveRequestCoordinator.kt')
+          coordinator.write_text('''package com.example.utils
+
+/**
+ * Coordinates asynchronous snapshots for one GameViewModel.
+ *
+ * A save ticket is valid only while it is the newest request in the current career.
+ * Career resets temporarily block new saves and permanently invalidate every older ticket.
+ */
+class SaveRequestCoordinator {
+    data class SaveTicket internal constructor(
+        val generation: Long,
+        val request: Long
+    )
+
+    private var generation = 0L
+    private var request = 0L
+    private var resetInProgress = false
+
+    @Synchronized
+    fun nextSave(): SaveTicket? {
+        if (resetInProgress) return null
+        request += 1
+        return SaveTicket(generation = generation, request = request)
+    }
+
+    @Synchronized
+    fun isCurrent(ticket: SaveTicket): Boolean =
+        !resetInProgress && ticket.generation == generation && ticket.request == request
+
+    @Synchronized
+    fun beginReset(): Long {
+        generation += 1
+        request += 1
+        resetInProgress = true
+        return generation
+    }
+
+    @Synchronized
+    fun isCurrentReset(token: Long): Boolean =
+        resetInProgress && token == generation
+
+    @Synchronized
+    fun finishReset(token: Long): Boolean {
+        if (!isCurrentReset(token)) return false
+        resetInProgress = false
+        return true
+    }
+}
+''')
+
+          test = Path('app/src/test/java/com/example/SaveGenerationTest.kt')
+          test.write_text('''package com.example
+
+import com.example.utils.SaveRequestCoordinator
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** Regression coverage for asynchronous save ordering and career reset invalidation. */
+class SaveGenerationTest {
+    @Test
+    fun newerSaveInvalidatesOlderQueuedSnapshot() {
+        val coordinator = SaveRequestCoordinator()
+        val older = coordinator.nextSave()!!
+        val newer = coordinator.nextSave()!!
+
+        assertFalse(coordinator.isCurrent(older))
+        assertTrue(coordinator.isCurrent(newer))
+    }
+
+    @Test
+    fun resetBlocksSavesAndInvalidatesOldCareerTickets() {
+        val coordinator = SaveRequestCoordinator()
+        val oldCareerSave = coordinator.nextSave()!!
+        val reset = coordinator.beginReset()
+
+        assertFalse(coordinator.isCurrent(oldCareerSave))
+        assertNull(coordinator.nextSave())
+        assertTrue(coordinator.isCurrentReset(reset))
+        assertTrue(coordinator.finishReset(reset))
+
+        val newCareerSave = coordinator.nextSave()
+        assertNotNull(newCareerSave)
+        assertFalse(coordinator.isCurrent(oldCareerSave))
+        assertTrue(coordinator.isCurrent(newCareerSave!!))
+    }
+
+    @Test
+    fun newerResetSupersedesOlderResetCompletion() {
+        val coordinator = SaveRequestCoordinator()
+        val firstReset = coordinator.beginReset()
+        val secondReset = coordinator.beginReset()
+
+        assertFalse(coordinator.isCurrentReset(firstReset))
+        assertFalse(coordinator.finishReset(firstReset))
+        assertTrue(coordinator.isCurrentReset(secondReset))
+        assertTrue(coordinator.finishReset(secondReset))
+    }
+}
+''')
+          PY
+
+          rm .github/workflows/patch-autosave-ordering.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/src/main/java/com/example/GameViewModel.kt \
+                  app/src/main/java/com/example/utils/SaveRequestCoordinator.kt \
+                  app/src/test/java/com/example/SaveGenerationTest.kt \
+                  .github/workflows/patch-autosave-ordering.yml
+          git commit -m 'Harden autosave ordering across resets'
+          git push origin HEAD:audit/autosave-ordering
