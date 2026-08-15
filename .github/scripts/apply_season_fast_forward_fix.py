@@ -3,74 +3,67 @@ import re
 import textwrap
 
 
-def require_replace(text: str, old: str, new: str, label: str) -> str:
-    if old not in text:
-        raise SystemExit(f"Expected text not found: {label}")
-    return text.replace(old, new, 1)
+def sub_once(text: str, pattern: str, replacement, label: str, flags: int = 0) -> str:
+    compiled = re.compile(pattern, flags)
+    text, count = compiled.subn(replacement, text, count=1)
+    if count != 1:
+        raise SystemExit(f"Expected one match for {label}, got {count}")
+    return text
 
 
 # GameSimulator: bulk mode skips Android audio/notification effects.
 gs = Path("app/src/main/java/com/example/simulator/GameSimulator.kt")
 text = gs.read_text()
-text = require_replace(
+text = sub_once(
     text,
-    "    val finance: Finance = Finance()\n) : Serializable {",
-    "    val finance: Finance = Finance(),\n    val effectsEnabled: Boolean = true\n) : Serializable {",
+    r"(?m)^(\s*)val finance: Finance = Finance\(\)\s*\r?\n\) : Serializable$",
+    lambda m: f"{m.group(1)}val finance: Finance = Finance(),\n{m.group(1)}val effectsEnabled: Boolean = true\n) : Serializable",
     "SimulationConfig finance tail",
 )
-text = require_replace(
+text = sub_once(
     text,
-    "    private val soundManager = SoundManager(context)",
+    r"(?m)^    private val soundManager = SoundManager\(context\)$",
     "    private val soundManager = if (config.effectsEnabled) SoundManager(context) else null",
     "soundManager",
 )
-text = require_replace(
+text = sub_once(
     text,
-    "    private val notificationHelper = NotificationHelper(context)",
+    r"(?m)^    private val notificationHelper = NotificationHelper\(context\)$",
     "    private val notificationHelper = if (config.effectsEnabled) NotificationHelper(context) else null",
     "notificationHelper",
 )
-text = require_replace(text, "        soundManager.release()", "        soundManager?.release()", "release")
-text = require_replace(
-    text,
-    "                notificationHelper.sendNotification(",
-    "                notificationHelper?.sendNotification(",
-    "notification call",
-)
-text = require_replace(
-    text,
-    "            if (homeScore > awayScore) soundManager.playBasket() else soundManager.playBuzzer()",
-    "            if (homeScore > awayScore) soundManager?.playBasket() else soundManager?.playBuzzer()",
-    "sound call",
-)
+text = sub_once(text, r"soundManager\.release\(\)", "soundManager?.release()", "release")
+text = sub_once(text, r"notificationHelper\.sendNotification\(", "notificationHelper?.sendNotification(", "notification call")
+text = sub_once(text, r"soundManager\.playBasket\(\)", "soundManager?.playBasket()", "basket sound")
+text = sub_once(text, r"soundManager\.playBuzzer\(\)", "soundManager?.playBuzzer()", "buzzer sound")
 gs.write_text(text)
 
 
-# GameViewModel: heavy game simulation moves to Default; only state publication remains on Main.
+# GameViewModel: heavy simulation runs on Default; Compose state publication stays on Main.
 vm = Path("app/src/main/java/com/example/GameViewModel.kt")
 text = vm.read_text()
-text = require_replace(
+text = sub_once(
     text,
-    "import kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.delay",
+    r"(?m)^import kotlinx\.coroutines\.Dispatchers\s*\r?\nimport kotlinx\.coroutines\.delay$",
     "import kotlinx.coroutines.CancellationException\nimport kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.Job\nimport kotlinx.coroutines.delay",
     "coroutine imports",
 )
-text = require_replace(
+text = sub_once(
     text,
-    "            _seasonSimulationProgress.value = value\n        }\n\n    // New Game states and settings",
-    "            _seasonSimulationProgress.value = value\n        }\n    private var seasonSimulationJob: Job? = null\n\n    // New Game states and settings",
+    r"(?m)^    // New Game states and settings$",
+    "    private var seasonSimulationJob: Job? = null\n\n    // New Game states and settings",
     "seasonSimulationJob field",
 )
-text = require_replace(
+text = sub_once(
     text,
-    "    fun startNewGame(selectedTeamName: String, coachName: String, offSkill: Int, defSkill: Int, motSkill: Int, selectedDifficulty: Int = 1) {\n        // Invalidate queued snapshots before clearing.",
-    "    fun startNewGame(selectedTeamName: String, coachName: String, offSkill: Int, defSkill: Int, motSkill: Int, selectedDifficulty: Int = 1) {\n        seasonSimulationJob?.cancel()\n        seasonSimulationJob = null\n        seasonSimulationProgress = null\n        // Invalidate queued snapshots before clearing.",
+    r"(?m)^(    fun startNewGame\([^\n]+\) \{)\s*\r?\n(        // Invalidate queued snapshots before clearing\.)$",
+    lambda m: m.group(1) + "\n        seasonSimulationJob?.cancel()\n        seasonSimulationJob = null\n        seasonSimulationProgress = null\n" + m.group(2),
     "new-game cancellation",
 )
-text = require_replace(
+text = sub_once(
     text,
-    "    fun clearSavedGame(context: Context) {\n        val resetToken = saveCoordinator.beginReset()",
-    "    fun clearSavedGame(context: Context) {\n        seasonSimulationJob?.cancel()\n        seasonSimulationJob = null\n        seasonSimulationProgress = null\n        val resetToken = saveCoordinator.beginReset()",
+    r"(?m)^(    fun clearSavedGame\(context: Context\) \{)\s*\r?\n(        val resetToken = saveCoordinator\.beginReset\(\))$",
+    lambda m: m.group(1) + "\n        seasonSimulationJob?.cancel()\n        seasonSimulationJob = null\n        seasonSimulationProgress = null\n" + m.group(2),
     "clear cancellation",
 )
 
@@ -202,34 +195,28 @@ new_region = '''    private data class SeasonDayBatch(
     )
 
 '''
-pattern = re.compile(
-    r"^    fun simulateSeasonRemaining\(context: Context\) \{.*?^    fun simulatePlayoffsInteractive\(context: Context\) \{",
-    re.MULTILINE | re.DOTALL,
+text = sub_once(
+    text,
+    r"(?ms)^    fun simulateSeasonRemaining\(context: Context\) \{.*?^    fun simulatePlayoffsInteractive\(context: Context\) \{",
+    new_region + "    fun simulatePlayoffsInteractive(context: Context) {",
+    "fast-forward region",
 )
-text, count = pattern.subn(new_region + "    fun simulatePlayoffsInteractive(context: Context) {", text, count=1)
-if count != 1:
-    raise SystemExit(f"Expected one simulateSeasonRemaining region, replaced {count}")
 vm.write_text(text)
 
 
-# Prevent duplicate taps while fast-forward is active.
+# Prevent duplicate season-simulation launches while the progress dialog is active.
 dash = Path("app/src/main/java/com/example/ui/DashboardTab.kt")
 text = dash.read_text()
-button_pattern = re.compile(
-    r"(onClick = \{\s*viewModel\.simulateSeasonRemaining\(context\)\s*\},\s*modifier = Modifier\.fillMaxWidth\(\),)(\s*colors = ButtonDefaults\.buttonColors\(containerColor = ChampionshipGold\),)",
-    re.MULTILINE,
-)
-text, count = button_pattern.subn(
-    r"\1\n                        enabled = seasonSimProgress == null,\2",
+text = sub_once(
     text,
-    count=1,
+    r"(?ms)(onClick = \{\s*viewModel\.simulateSeasonRemaining\(context\)\s*\},\s*modifier = Modifier\.fillMaxWidth\(\),)(\s*colors = ButtonDefaults\.buttonColors\(containerColor = ChampionshipGold\),)",
+    r"\1\n                        enabled = seasonSimProgress == null,\2",
+    "season simulation button",
 )
-if count != 1:
-    raise SystemExit(f"Expected one season-simulation button, replaced {count}")
 dash.write_text(text)
 
 
-# Regression: execute the actual GameSimulator for all 1,230 regular-season games.
+# Regression: execute all 1,230 regular-season games through the real GameSimulator.
 test = Path("app/src/test/java/com/example/RealSeasonSimulationTest.kt")
 test.write_text(textwrap.dedent('''
     package com.example
