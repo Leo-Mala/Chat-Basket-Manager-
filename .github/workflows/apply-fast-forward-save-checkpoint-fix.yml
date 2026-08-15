@@ -1,0 +1,204 @@
+name: Apply fast-forward save checkpoint fix
+
+on:
+  push:
+    branches:
+      - fix/season-fast-forward-crash
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/season-fast-forward-crash
+
+      - name: Patch save coordination and regression test
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          vm = Path('app/src/main/java/com/example/GameViewModel.kt')
+          text = vm.read_text()
+
+          save_pattern = re.compile(r'''    fun saveGame\(\) \{.*?\n    \}\n\n    fun hireStaff''', re.S)
+          save_replacement = '''    fun saveGame(): Job? {
+        val saveTicket = saveCoordinator.nextSave() ?: return null
+        val currentTeam = managedTeam
+        val currentSeason = season
+        val currentFinances = finances
+        val currentTactics = tactics
+        val currentCoach = coach
+        val currentHistory = historyManager
+        val currentAwardsCopy = currentAwards
+        val currentStartingFive = startingFive.toList()
+        val currentFreeAgents = freeAgents.toList()
+        val currentDifficulty = difficulty
+        val currentInjuries = injuriesEnabled
+        val currentAutoSubs = autoSubstitutionsEnabled
+        val currentNotes = assistantNotifications.toList()
+        val currentStaff = teamStaff
+        val currentFacilities = teamFacilities
+        val currentFinanceAdv = financeAdvanced
+        val currentNews = newsFeed.toList()
+        val currentBox = latestBoxScore
+        val currentDraftRookies = draftRookies.toList()
+        val currentStaffMarket = availableStaffMarket.toList()
+        val currentContracts = contracts.values.toList()
+        val currentPlayoffResult = playoffResult
+
+        return viewModelScope.launch(Dispatchers.IO) {
+            try {
+                saveMutex.withLock {
+                    // Only the newest snapshot in the current career may reach Room.
+                    if (!saveCoordinator.isCurrent(saveTicket)) return@withLock
+                    AutoSaveManager.saveGameState(
+                        team = currentTeam, season = currentSeason, finance = currentFinances,
+                        tactics = currentTactics, coach = currentCoach, history = currentHistory,
+                        awards = currentAwardsCopy, startingFive = currentStartingFive,
+                        freeAgents = currentFreeAgents, difficulty = currentDifficulty,
+                        injuriesEnabled = currentInjuries, autoSubstitutionsEnabled = currentAutoSubs,
+                        assistantNotifications = currentNotes, teamStaff = currentStaff,
+                        teamFacilities = currentFacilities, financeAdvanced = currentFinanceAdv,
+                        newsFeed = currentNews, latestBoxScore = currentBox,
+                        draftRookies = currentDraftRookies, availableStaffMarket = currentStaffMarket,
+                        contracts = currentContracts, playoffResult = currentPlayoffResult
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    ToastUtils.showToast(
+                        getApplication<Application>().applicationContext,
+                        "Falha ao salvar progresso: ${e.message ?: e::class.java.simpleName}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun hireStaff'''
+          text, count = save_pattern.subn(save_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'Expected one saveGame block, got {count}')
+
+          old = '                    if (currentSeason.currentDay % 10 == 0) saveGame()'
+          new = '''                    if (currentSeason.currentDay % 10 == 0) {
+                        // Do not mutate the live Season while Gson/Room is serializing it.
+                        // Await the checkpoint before the next batch starts.
+                        saveGame()?.join()
+                    }'''
+          if old not in text:
+              raise SystemExit('Checkpoint call not found')
+          text = text.replace(old, new, 1)
+
+          old_final = '                if (persistOnExit) saveGame()'
+          new_final = '''                if (persistOnExit) {
+                    // Final persistence is part of the fast-forward lifecycle; wait for it.
+                    saveGame()?.join()
+                }'''
+          if old_final not in text:
+              raise SystemExit('Final save call not found')
+          text = text.replace(old_final, new_final, 1)
+          vm.write_text(text)
+
+          test = Path('app/src/androidTest/java/com/example/FastForwardCheckpointPersistenceTest.kt')
+          test.write_text(r'''package com.example
+
+import android.content.Context
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.example.data.NbaDataGenerator
+import com.example.domain.season.SeasonManager
+import com.example.models.Finance
+import com.example.models.HistoryManager
+import com.example.models.Season
+import com.example.models.Tactics
+import com.example.simulator.GameSimulator
+import com.example.simulator.SimulationConfig
+import com.example.utils.AutoSaveManager
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class FastForwardCheckpointPersistenceTest {
+    @Test
+    fun realSimulationCanPersistCheckpointsBetweenBatches() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
+        AutoSaveManager.init(context)
+        AutoSaveManager.clearGameState()
+
+        val teams = NbaDataGenerator.getAllTeams()
+        val managed = teams.first()
+        val season = Season(
+            teams = teams,
+            nextPlayerId = teams.asSequence().flatMap { it.players.asSequence() }.maxOf { it.id } + 1
+        ).apply { userTeamName = managed.name }
+        val seasonManager = SeasonManager()
+        val simulator = GameSimulator(
+            context,
+            SimulationConfig(
+                injuriesEnabled = false,
+                managedTeam = managed,
+                effectsEnabled = false
+            )
+        )
+
+        try {
+            repeat(20) { day ->
+                val matchups = seasonManager.getMatchupsForDay(season, day)
+                assertEquals(15, matchups.size)
+                matchups.forEach { (home, away) ->
+                    season.addResult(simulator.simulate(home, away))
+                }
+                season.advanceDay()
+
+                if (season.currentDay % 10 == 0) {
+                    AutoSaveManager.saveGameState(
+                        team = managed,
+                        season = season,
+                        finance = Finance(),
+                        tactics = Tactics(),
+                        coach = null,
+                        history = HistoryManager()
+                    )
+                    val snapshot = AutoSaveManager.loadGameState()
+                    assertNotNull(snapshot)
+                    val restored = AutoSaveManager.gson.fromJson(snapshot!!.seasonJson, Season::class.java)
+                    assertEquals(season.currentDay, restored.currentDay)
+                    assertEquals(season.gamesPlayed, restored.gamesPlayed)
+                }
+            }
+        } finally {
+            simulator.release()
+            AutoSaveManager.clearGameState()
+        }
+
+        assertEquals(20, season.currentDay)
+        assertEquals(300, season.gamesPlayed)
+    }
+}
+''')
+          PY
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-fast-forward-save-checkpoint-fix.yml
+          git add app/src/main/java/com/example/GameViewModel.kt \
+                  app/src/androidTest/java/com/example/FastForwardCheckpointPersistenceTest.kt
+          git commit -m "Serialize fast-forward save checkpoints safely"
+          git push origin HEAD:fix/season-fast-forward-crash
