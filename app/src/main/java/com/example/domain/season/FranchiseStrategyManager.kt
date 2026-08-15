@@ -37,11 +37,16 @@ class FranchiseStrategyManager {
         }
     }
 
+    /**
+     * Strategy changes selection and age tolerance without increasing the global transaction budget.
+     * Keeping renewal counts close to the proven baseline prevents strategy from becoming artificial
+     * roster churn while still making contenders preserve cores and rebuilds turn toward youth.
+     */
     fun policy(strategy: Strategy): Policy = when (strategy) {
-        Strategy.CONTENDER -> Policy(strategy, maxRenewals = 4, maximumRenewalAge = 34, freeAgencyUpgrades = 1, minimumFreeAgencyUpgrade = 5, preferYouth = false)
-        Strategy.REBUILD -> Policy(strategy, maxRenewals = 1, maximumRenewalAge = 27, freeAgencyUpgrades = 0, minimumFreeAgencyUpgrade = 7, preferYouth = true)
+        Strategy.CONTENDER -> Policy(strategy, maxRenewals = 3, maximumRenewalAge = 34, freeAgencyUpgrades = 0, minimumFreeAgencyUpgrade = 6, preferYouth = false)
+        Strategy.REBUILD -> Policy(strategy, maxRenewals = 2, maximumRenewalAge = 27, freeAgencyUpgrades = 0, minimumFreeAgencyUpgrade = 7, preferYouth = true)
         Strategy.YOUNG_CORE -> Policy(strategy, maxRenewals = 3, maximumRenewalAge = 30, freeAgencyUpgrades = 0, minimumFreeAgencyUpgrade = 6, preferYouth = true)
-        Strategy.AGING_CORE -> Policy(strategy, maxRenewals = 1, maximumRenewalAge = 30, freeAgencyUpgrades = 0, minimumFreeAgencyUpgrade = 6, preferYouth = true)
+        Strategy.AGING_CORE -> Policy(strategy, maxRenewals = 2, maximumRenewalAge = 30, freeAgencyUpgrades = 0, minimumFreeAgencyUpgrade = 6, preferYouth = true)
         Strategy.BALANCED -> Policy(strategy, maxRenewals = 3, maximumRenewalAge = 33, freeAgencyUpgrades = 0, minimumFreeAgencyUpgrade = 6, preferYouth = false)
     }
 
