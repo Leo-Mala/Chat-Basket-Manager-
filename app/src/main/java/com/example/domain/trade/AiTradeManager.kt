@@ -149,7 +149,9 @@ class AiTradeManager {
             .filter { (playerA, playerB) ->
                 abs(playerA.overall - playerB.overall) <= maxOverallDifference &&
                     TradeRules.canTrade(teamA, teamB, playerA, playerB) &&
-                    TradeRules.canTrade(teamB, teamA, playerB, playerA)
+                    TradeRules.canTrade(teamB, teamA, playerB, playerA) &&
+                    strategyAllowsTrade(policyA, outgoing = playerA, incoming = playerB) &&
+                    strategyAllowsTrade(policyB, outgoing = playerB, incoming = playerA)
             }
             .mapNotNull { (playerA, playerB) ->
                 val afterA = balanceScore(swapOut(teamA, playerA, playerB))
@@ -196,16 +198,39 @@ class AiTradeManager {
             .toSet()
     }
 
+    private fun strategyAllowsTrade(
+        policy: FranchiseStrategyManager.Policy?,
+        outgoing: Player,
+        incoming: Player
+    ): Boolean = when (policy?.strategy) {
+        FranchiseStrategyManager.Strategy.CONTENDER -> incoming.overall >= outgoing.overall
+        FranchiseStrategyManager.Strategy.REBUILD ->
+            incoming.age <= outgoing.age || incoming.overall >= outgoing.overall + 3
+        FranchiseStrategyManager.Strategy.YOUNG_CORE,
+        FranchiseStrategyManager.Strategy.AGING_CORE ->
+            incoming.age <= outgoing.age || incoming.overall >= outgoing.overall + 2
+        FranchiseStrategyManager.Strategy.BALANCED,
+        null -> true
+    }
+
     private fun strategyFit(
         policy: FranchiseStrategyManager.Policy?,
         outgoing: Player,
         incoming: Player
     ): Int = when (policy?.strategy) {
-        FranchiseStrategyManager.Strategy.CONTENDER -> incoming.overall - outgoing.overall
-        FranchiseStrategyManager.Strategy.REBUILD,
-        FranchiseStrategyManager.Strategy.YOUNG_CORE,
-        FranchiseStrategyManager.Strategy.AGING_CORE -> outgoing.age - incoming.age
-        FranchiseStrategyManager.Strategy.BALANCED,
+        FranchiseStrategyManager.Strategy.CONTENDER ->
+            maxOf(0, incoming.overall - outgoing.overall) * 4
+        FranchiseStrategyManager.Strategy.REBUILD ->
+            maxOf(0, outgoing.age - incoming.age) * 4 +
+                maxOf(0, incoming.overall - outgoing.overall)
+        FranchiseStrategyManager.Strategy.YOUNG_CORE ->
+            maxOf(0, outgoing.age - incoming.age) * 3 +
+                maxOf(0, incoming.overall - outgoing.overall) * 2
+        FranchiseStrategyManager.Strategy.AGING_CORE ->
+            maxOf(0, outgoing.age - incoming.age) * 5 +
+                maxOf(0, incoming.overall - outgoing.overall)
+        FranchiseStrategyManager.Strategy.BALANCED ->
+            maxOf(0, incoming.overall - outgoing.overall)
         null -> 0
     }
 
