@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -30,7 +29,6 @@ jobs:
                   raise SystemExit(f'{path}: expected {expected} occurrences of {old!r}, found {count}')
               p.write_text(text.replace(old, new))
 
-          # Stage 9 — remove redundant autosaves around starting-five synchronization.
           vm = Path('app/src/main/java/com/example/GameViewModel.kt')
           text = vm.read_text()
           pattern = re.compile(
@@ -40,14 +38,16 @@ jobs:
           matches = list(pattern.finditer(text))
           if len(matches) != 1:
               raise SystemExit(f'GameViewModel: expected one syncStartingFive function, found {len(matches)}')
-          replacement = '''    fun syncStartingFive(persist: Boolean = true) {
-        val team = managedTeam ?: return
-        startingFive = rosterManager.syncStartingFive(team, startingFive)
-        if (persist) saveGame()
-    }
-
-
-    // Automatic in-game substitutions simulation'''
+          replacement = '\n'.join([
+              '    fun syncStartingFive(persist: Boolean = true) {',
+              '        val team = managedTeam ?: return',
+              '        startingFive = rosterManager.syncStartingFive(team, startingFive)',
+              '        if (persist) saveGame()',
+              '    }',
+              '',
+              '',
+              '    // Automatic in-game substitutions simulation',
+          ])
           text = pattern.sub(replacement, text, count=1)
           call_count = text.count('syncStartingFive()')
           if call_count != 4:
@@ -55,21 +55,22 @@ jobs:
           text = text.replace('syncStartingFive()', 'syncStartingFive(persist = false)')
           vm.write_text(text)
 
-          # Stage 9 — ticket-price dragging updates local UI continuously but persists only once
-          # when the gesture finishes, avoiding a Room write for every slider tick.
           finance = Path('app/src/main/java/com/example/ui/screens/FinanceAdvancedScreen.kt')
           text = finance.read_text()
-          old_slider = '''                            onValueChange = {
-                                ticketPriceState = it
-                                onUpdateTicketPrice(it.toInt())
-                            },'''
-          new_slider = '''                            onValueChange = { ticketPriceState = it },
-                            onValueChangeFinished = { onUpdateTicketPrice(ticketPriceState.toInt()) },'''
+          old_slider = '\n'.join([
+              '                            onValueChange = {',
+              '                                ticketPriceState = it',
+              '                                onUpdateTicketPrice(it.toInt())',
+              '                            },',
+          ])
+          new_slider = '\n'.join([
+              '                            onValueChange = { ticketPriceState = it },',
+              '                            onValueChangeFinished = { onUpdateTicketPrice(ticketPriceState.toInt()) },',
+          ])
           if text.count(old_slider) != 1:
               raise SystemExit('FinanceAdvancedScreen: slider callback block not uniquely found')
           finance.write_text(text.replace(old_slider, new_slider, 1))
 
-          # Stage 10 — current Compose navigation icon and divider APIs.
           arrow_files = [
               'app/src/main/java/com/example/ui/screens/BoxScoreScreen.kt',
               'app/src/main/java/com/example/ui/screens/FacilitiesScreen.kt',
@@ -77,11 +78,7 @@ jobs:
               'app/src/main/java/com/example/ui/screens/NewsFeedScreen.kt',
           ]
           for path in arrow_files:
-              replace_exact(
-                  path,
-                  'import androidx.compose.material.icons.filled.ArrowBack',
-                  'import androidx.compose.material.icons.automirrored.filled.ArrowBack'
-              )
+              replace_exact(path, 'import androidx.compose.material.icons.filled.ArrowBack', 'import androidx.compose.material.icons.automirrored.filled.ArrowBack')
               replace_exact(path, 'Icons.Default.ArrowBack', 'Icons.AutoMirrored.Filled.ArrowBack')
 
           staff = Path('app/src/main/java/com/example/ui/screens/StaffManagementScreen.kt')
@@ -97,7 +94,6 @@ jobs:
           replace_exact('app/src/main/java/com/example/ui/screens/NotificationsTab.kt', 'Divider(', 'HorizontalDivider(', expected=1)
           replace_exact('app/src/main/java/com/example/ui/screens/NewsFeedScreen.kt', 'NewsType.values()', 'NewsType.entries', expected=1)
           PY
-
           rm .github/workflows/patch-performance-ui.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
