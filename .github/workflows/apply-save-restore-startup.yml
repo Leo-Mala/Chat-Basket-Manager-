@@ -1,0 +1,31 @@
+name: Apply save restore startup fix
+on:
+  push:
+    branches: [fix/live-match-finalization]
+    paths:
+      - '.github/scripts/patch_save_restore_startup.py'
+      - '.github/workflows/apply-save-restore-startup.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/live-match-finalization
+      - name: Apply save restore startup patch
+        run: python3 .github/scripts/patch_save_restore_startup.py
+      - name: Verify targeted files
+        run: |
+          grep -q 'savedGameLoadState' app/src/main/java/com/example/GameViewModel.kt
+          grep -q 'CARREGANDO CARREIRA SALVA' app/src/main/java/com/example/ui/GameApp.kt
+          grep -q 'SavedGameStartupRules' app/src/main/java/com/example/domain/rules/SavedGameStartupRules.kt
+      - name: Commit fix
+        run: |
+          rm .github/scripts/patch_save_restore_startup.py .github/workflows/apply-save-restore-startup.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix saved career restoration on startup'
+          git push origin HEAD:fix/live-match-finalization
