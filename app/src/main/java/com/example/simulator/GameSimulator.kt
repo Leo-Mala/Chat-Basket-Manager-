@@ -5,8 +5,8 @@ import com.example.models.*
 import com.example.utils.NotificationHelper
 import com.example.utils.SoundManager
 import java.io.Serializable
-import kotlin.random.Random
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 data class SimulationConfig(
     val difficulty: Int = 1,
@@ -28,7 +28,7 @@ class GameSimulator(
     @Transient
     private val engine = MatchSimulationEngine()
 
-            data class GameResult(
+    data class GameResult(
         val homeTeam: NbaTeam,
         val awayTeam: NbaTeam,
         val homeScore: Int,
@@ -41,7 +41,7 @@ class GameSimulator(
         val matchBoxScore: MatchBoxScore? = null
     ) : Serializable
 
-            data class PlayerStats(
+    data class PlayerStats(
         val points: Int,
         val rebounds: Int,
         val assists: Int,
@@ -51,7 +51,7 @@ class GameSimulator(
         val plusMinus: Int
     ) : Serializable
 
-            data class Injury(
+    data class Injury(
         val player: Player,
         val daysOut: Int
     ) : Serializable
@@ -86,33 +86,27 @@ class GameSimulator(
         val managedTeam = config.managedTeam
         val finance = config.finance
 
-        // Aplicar bônus apenas para a equipe gerenciada pelo usuário
-        val isHomeManaged = (managedTeam != null && home.name == managedTeam.name)
-        val isAwayManaged = (managedTeam != null && away.name == managedTeam.name)
+        val isHomeManaged = managedTeam != null && home.name == managedTeam.name
+        val isAwayManaged = managedTeam != null && away.name == managedTeam.name
 
-        // Difficulty and tactical modifiers are centralized in SimulationRules.
         val userDiffMod = SimulationRules.difficultyUserModifier(difficulty)
         val oppDiffMod = SimulationRules.difficultyOpponentModifier(difficulty)
 
         val defaultTactics = Tactics()
-        val userCoach = coach
-        val homeManaged = isHomeManaged
-        val awayManaged = isAwayManaged
-
-        val homeTactics = if (homeManaged) tactics else defaultTactics
-        val awayTactics = if (awayManaged) tactics else defaultTactics
-        val homeCoach = if (homeManaged) userCoach else null
-        val awayCoach = if (awayManaged) userCoach else null
+        val homeTactics = if (isHomeManaged) tactics else defaultTactics
+        val awayTactics = if (isAwayManaged) tactics else defaultTactics
+        val homeCoach = if (isHomeManaged) coach else null
+        val awayCoach = if (isAwayManaged) coach else null
 
         val homeProfileBase = SimulationRules.profile(home, homeTactics, homeCoach, home = true)
         val awayProfileBase = SimulationRules.profile(away, awayTactics, awayCoach, home = false)
         val homeProfile = homeProfileBase.copy(
-            offense = homeProfileBase.offense * if (homeManaged) userDiffMod else if (awayManaged) oppDiffMod else 1.0,
-            defense = homeProfileBase.defense * if (homeManaged) userDiffMod else if (awayManaged) oppDiffMod else 1.0
+            offense = homeProfileBase.offense * if (isHomeManaged) userDiffMod else if (isAwayManaged) oppDiffMod else 1.0,
+            defense = homeProfileBase.defense * if (isHomeManaged) userDiffMod else if (isAwayManaged) oppDiffMod else 1.0
         )
         val awayProfile = awayProfileBase.copy(
-            offense = awayProfileBase.offense * if (awayManaged) userDiffMod else if (homeManaged) oppDiffMod else 1.0,
-            defense = awayProfileBase.defense * if (awayManaged) userDiffMod else if (homeManaged) oppDiffMod else 1.0
+            offense = awayProfileBase.offense * if (isAwayManaged) userDiffMod else if (isHomeManaged) oppDiffMod else 1.0,
+            defense = awayProfileBase.defense * if (isAwayManaged) userDiffMod else if (isHomeManaged) oppDiffMod else 1.0
         )
 
         val homeOff = homeProfile.offense
@@ -120,59 +114,41 @@ class GameSimulator(
         val awayOff = awayProfile.offense
         val awayDef = awayProfile.defense
 
-        val homeAvailable = home.players.filter { it.isAvailable() }
-        val awayAvailable = away.players.filter { it.isAvailable() }
+        val homeAvailable = RotationRules.eligibleForGame(home.players)
+        val awayAvailable = RotationRules.eligibleForGame(away.players)
+        require(homeAvailable.size >= RotationRules.MIN_PLAYERS_FOR_GAME) { "${home.name} has fewer than five rostered players" }
+        require(awayAvailable.size >= RotationRules.MIN_PLAYERS_FOR_GAME) { "${away.name} has fewer than five rostered players" }
 
-        // Lesões
         val injuries = mutableListOf<Injury>()
         if (injuriesEnabled) {
-            val allAvailable = homeAvailable + awayAvailable
-            allAvailable.forEach { player ->
+            (homeAvailable + awayAvailable).forEach { player ->
                 val isUserPlayer = managedTeam?.players?.any { it.id == player.id } ?: false
-                val injuryProbability = if (isUserPlayer) {
-                    val medLvl = if (finance.medicalStaffLevel < 1) 1 else finance.medicalStaffLevel
-                    (5 - (medLvl - 1)).coerceAtLeast(1)
-                } else {
-                    5
-                }
-                if (!player.injured && Random.nextInt(100) < injuryProbability) {
-                    val daysOutRaw = (2..8).random()
-                    val daysOut = if (isUserPlayer) {
-                        val medLvl = if (finance.medicalStaffLevel < 1) 1 else finance.medicalStaffLevel
-                        (daysOutRaw - (medLvl - 1)).coerceAtLeast(1)
-                    } else {
-                        daysOutRaw
-                    }
+                val probability = InjuryRules.probabilityPerThousand(isUserPlayer, finance.medicalStaffLevel)
+                if (!player.injured && InjuryRules.shouldInjure(Random.Default, probability)) {
+                    val daysOut = InjuryRules.daysOut(Random.Default, isUserPlayer, finance.medicalStaffLevel)
                     player.injured = true
                     player.injuryDays = daysOut
-                    injuries.add(Injury(player, daysOut))
+                    injuries += Injury(player, daysOut)
                 }
             }
-            if (injuries.isNotEmpty()) {
-                injuries.forEach { injury ->
-                    notificationHelper.sendNotification(
-                        "Lesão: ${injury.player.name}",
-                        "${injury.player.name} está lesionado por ${injury.daysOut} jogos."
-                    )
-                }
+            injuries.forEach { injury ->
+                notificationHelper.sendNotification(
+                    "Lesão: ${injury.player.name}",
+                    "${injury.player.name} está lesionado por ${injury.daysOut} jogos."
+                )
             }
         }
 
         var homeScore = SimulationRules.expectedScore(homeProfile, awayProfile, Random)
         var awayScore = SimulationRules.expectedScore(awayProfile, homeProfile, Random)
 
-        // Desempate (Prorrogação)
         if (homeScore == awayScore) {
             if (Random.nextBoolean()) homeScore += (2..7).random() else awayScore += (2..7).random()
         }
 
         val attendanceFactor = 0.7 + Random.nextDouble(0.25)
         val baseCapacity = home.arena.capacity
-        val finalCapacity = if (home.name == managedTeam?.name) {
-            finance.getArenaCapacity(baseCapacity)
-        } else {
-            baseCapacity
-        }
+        val finalCapacity = if (home.name == managedTeam?.name) finance.getArenaCapacity(baseCapacity) else baseCapacity
         val attendance = minOf((finalCapacity * attendanceFactor).toInt(), finalCapacity)
 
         val homeLines = engine.generateTeamLines(
@@ -215,7 +191,6 @@ class GameSimulator(
             )
         }
 
-        // Atualizar estatísticas usando exatamente os números produzidos pelo motor.
         (homeStats + awayStats).forEach { (player, stats) ->
             player.careerGames++
             player.careerPoints += stats.points
@@ -236,9 +211,6 @@ class GameSimulator(
 
         val narration = (1..3).map { narrationFragments.random() }.joinToString(" ")
 
-        // O box score é construído a partir do mesmo snapshot usado nas estatísticas.
-        // Isso garante: FGM >= 3PM, FGA >= FGM, 3PA >= 3PM, FTA >= FTM e
-        // 2*FGM + 3*3PM + FTM == pontos de cada jogador.
         fun toBox(line: MatchSimulationEngine.PlayerLine): PlayerBoxScore = PlayerBoxScore(
             playerId = line.player.id,
             playerName = line.player.name,
@@ -307,8 +279,8 @@ class GameSimulator(
 
         try {
             if (homeScore > awayScore) soundManager.playBasket() else soundManager.playBuzzer()
-        } catch (e: Exception) {
-            // Ignorar erros de áudio
+        } catch (_: Exception) {
+            // Audio failure must never break a simulation.
         }
 
         return GameResult(
