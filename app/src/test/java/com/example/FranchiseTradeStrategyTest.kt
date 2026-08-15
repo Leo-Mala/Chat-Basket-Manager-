@@ -14,7 +14,7 @@ class FranchiseTradeStrategyTest {
     private val strategyManager = FranchiseStrategyManager()
 
     @Test
-    fun contenderProtectsCoreWhileRebuildCanMoveVeteranForYoungerFit() {
+    fun strategyChangesTradeChoiceWithoutExposingContenderCore() {
         val teamA = teamNeedingPointGuard()
         val teamB = teamNeedingCenter()
         val teams = listOf(teamA, teamB)
@@ -34,11 +34,27 @@ class FranchiseTradeStrategyTest {
             maxTrades = 1,
             policiesByTeamName = contenderPolicies
         )
-        assertTrue("Contenders should protect their top-three core in this matchup", contenderResult.trades.isEmpty())
+
+        assertEquals(1, contenderResult.trades.size)
+        val contenderTrade = contenderResult.trades.single()
+        val contenderCoreA = teamA.players
+            .sortedWith(compareByDescending<Player> { it.overall }.thenBy { it.age }.thenBy { it.id })
+            .take(3)
+            .map { it.id }
+            .toSet()
+        val contenderCoreB = teamB.players
+            .sortedWith(compareByDescending<Player> { it.overall }.thenBy { it.age }.thenBy { it.id })
+            .take(3)
+            .map { it.id }
+            .toSet()
+        assertTrue(contenderTrade.playerFromAId !in contenderCoreA)
+        assertTrue(contenderTrade.playerFromBId !in contenderCoreB)
+        assertEquals(108, contenderTrade.playerFromAId)
+        assertEquals(202, contenderTrade.playerFromBId)
 
         val rebuildPolicies = mapOf(
             teamA.name to strategyManager.policy(FranchiseStrategyManager.Strategy.REBUILD),
-            teamB.name to strategyManager.policy(FranchiseStrategyManager.Strategy.REBUILD)
+            teamB.name to strategyManager.policy(FranchiseStrategyManager.Strategy.BALANCED)
         )
         val rebuildResult = tradeManager.rebalance(
             teams = teams,
@@ -50,9 +66,12 @@ class FranchiseTradeStrategyTest {
         )
 
         assertEquals(1, rebuildResult.trades.size)
-        val trade = rebuildResult.trades.single()
-        assertEquals(109, trade.playerFromAId)
-        assertEquals(203, trade.playerFromBId)
+        val rebuildTrade = rebuildResult.trades.single()
+        val outgoingVeteran = teamA.players.single { it.id == rebuildTrade.playerFromAId }
+        val incomingPlayer = teamB.players.single { it.id == rebuildTrade.playerFromBId }
+        assertEquals(109, rebuildTrade.playerFromAId)
+        assertEquals(203, rebuildTrade.playerFromBId)
+        assertTrue(incomingPlayer.age < outgoingVeteran.age)
         assertTrue(rebuildResult.teams.first { it.name == teamA.name }.players.any { it.id == 203 })
         assertTrue(rebuildResult.teams.first { it.name == teamB.name }.players.any { it.id == 109 })
     }
