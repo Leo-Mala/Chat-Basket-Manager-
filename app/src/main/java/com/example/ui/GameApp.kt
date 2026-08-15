@@ -59,6 +59,7 @@ import com.example.domain.season.SeasonManager
 import com.example.domain.trade.TradeManager
 import com.example.domain.draft.DraftManager
 import com.example.domain.playoff.PlayoffManager
+import com.example.domain.rules.SavedGameLoadState
 import com.example.models.*
 import com.example.simulator.GameSimulator
 import com.example.ui.theme.*
@@ -110,36 +111,78 @@ fun BasketManagerGameApp() {
         label = "MainMenuToGameTransition"
     ) { isMainMenu ->
         if (isMainMenu) {
-            val hasSavedGame = viewModel.managedTeam != null
-            val teamName = viewModel.managedTeam?.name ?: ""
-            val budget = viewModel.finances?.budget ?: 0
-            val wins = viewModel.season?.standings?.get(teamName)?.wins ?: 0
-            val losses = viewModel.season?.standings?.get(teamName)?.losses ?: 0
+            when (viewModel.savedGameLoadState) {
+                SavedGameLoadState.LOADING -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        CircularProgressIndicator(color = BasketOrange)
+                        Text("CARREGANDO CARREIRA SALVA...", color = TextWhite, fontWeight = FontWeight.Bold)
+                        Text("Não feche nem inicie uma nova carreira enquanto o save é verificado.", color = TextGray, textAlign = TextAlign.Center)
+                    }
+                }
 
-            MainMenuScreen(
-                onContinue = {
-                    showMainMenu = false
-                },
-                onNewCareer = {
-                    viewModel.clearSavedGame(context)
-                    showMainMenu = false
-                },
-                onSettings = {
-                    showSettingsDialog = true
-                },
-                hasSavedGame = hasSavedGame,
-                teamName = teamName,
-                budget = budget,
-                wins = wins,
-                losses = losses
-            )
+                SavedGameLoadState.ERROR -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = CourtDeepSlate)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text("SAVE ENCONTRADO, MAS NÃO FOI POSSÍVEL CARREGAR", color = ChampionshipGold, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+                            Text(viewModel.loadErrorMessage ?: "Erro desconhecido", color = TextWhite, textAlign = TextAlign.Center)
+                            Button(onClick = { viewModel.retryLoadSavedGame() }) {
+                                Text("TENTAR CARREGAR NOVAMENTE")
+                            }
+                            Text("O save não será apagado por esta tela.", color = TextGray, textAlign = TextAlign.Center)
+                        }
+                    }
+                }
 
-            if (showSettingsDialog) {
-                SettingsDialog(
-                    viewModel = viewModel,
-                    onExitToMainMenu = null,
-                    onDismiss = { showSettingsDialog = false }
-                )
+                SavedGameLoadState.EMPTY, SavedGameLoadState.READY -> {
+                    val hasSavedGame = viewModel.savedGameLoadState == SavedGameLoadState.READY && viewModel.managedTeam != null
+                    val teamName = viewModel.managedTeam?.name ?: ""
+                    val budget = viewModel.finances?.budget ?: 0
+                    val wins = viewModel.season?.standings?.get(teamName)?.wins ?: 0
+                    val losses = viewModel.season?.standings?.get(teamName)?.losses ?: 0
+
+                    MainMenuScreen(
+                        onContinue = {
+                            showMainMenu = false
+                        },
+                        onNewCareer = {
+                            // Opening setup must never destroy an existing career. The old save
+                            // is replaced only when startNewGame() is actually confirmed.
+                            showMainMenu = false
+                        },
+                        onSettings = {
+                            showSettingsDialog = true
+                        },
+                        hasSavedGame = hasSavedGame,
+                        teamName = teamName,
+                        budget = budget,
+                        wins = wins,
+                        losses = losses
+                    )
+
+                    if (showSettingsDialog) {
+                        SettingsDialog(
+                            viewModel = viewModel,
+                            onExitToMainMenu = null,
+                            onDismiss = { showSettingsDialog = false }
+                        )
+                    }
+                }
             }
         } else {
             Box(

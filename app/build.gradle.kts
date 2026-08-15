@@ -18,6 +18,15 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+  val ciDebugKeystorePath = System.getenv("CI_DEBUG_KEYSTORE_PATH")
+  val ciDebugKeyAlias = System.getenv("CI_DEBUG_KEY_ALIAS")
+  val ciDebugStorePassword = System.getenv("CI_DEBUG_STORE_PASSWORD")
+  val ciDebugKeyPassword = System.getenv("CI_DEBUG_KEY_PASSWORD")
+  val hasCiDebugSigning = !ciDebugKeystorePath.isNullOrBlank() &&
+      !ciDebugKeyAlias.isNullOrBlank() &&
+      !ciDebugStorePassword.isNullOrBlank() &&
+      !ciDebugKeyPassword.isNullOrBlank()
+
   val releaseKeystorePath = System.getenv("RELEASE_KEYSTORE_PATH")
   val releaseKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
   val releaseStorePassword = System.getenv("RELEASE_STORE_PASSWORD")
@@ -28,6 +37,14 @@ android {
       !releaseKeyPassword.isNullOrBlank()
 
   signingConfigs {
+    if (hasCiDebugSigning) {
+      getByName("debug") {
+        storeFile = file(ciDebugKeystorePath!!)
+        keyAlias = ciDebugKeyAlias
+        storePassword = ciDebugStorePassword
+        keyPassword = ciDebugKeyPassword
+      }
+    }
     if (hasCiSigning) {
       create("ciRelease") {
         storeFile = file(releaseKeystorePath!!)
@@ -39,6 +56,11 @@ android {
   }
 
   buildTypes {
+    debug {
+      if (hasCiDebugSigning) {
+        signingConfig = signingConfigs.getByName("debug")
+      }
+    }
     release {
       isCrunchPngs = false
       isMinifyEnabled = true

@@ -59,6 +59,7 @@ import com.example.domain.season.SeasonManager
 import com.example.domain.trade.TradeManager
 import com.example.domain.draft.DraftManager
 import com.example.domain.playoff.PlayoffManager
+import com.example.domain.rules.LiveMatchRules
 import com.example.models.*
 import com.example.simulator.GameSimulator
 import com.example.ui.theme.*
@@ -92,9 +93,14 @@ fun PartidaDialog(
     val currentSeason = viewModel.season ?: return
     val userManagedTeam = viewModel.managedTeam ?: return
 
-    val (defaultOpponent, defaultIsHome) = viewModel.getNextOpponent()
-    val homeTeam = homeTeamOverride ?: if (defaultIsHome) userManagedTeam else defaultOpponent
-    val awayTeam = awayTeamOverride ?: if (defaultIsHome) defaultOpponent else userManagedTeam
+    val initialMatchup = remember(homeTeamOverride?.name, awayTeamOverride?.name) {
+        val (defaultOpponent, defaultIsHome) = viewModel.getNextOpponent()
+        val initialHome = homeTeamOverride ?: if (defaultIsHome) userManagedTeam else defaultOpponent
+        val initialAway = awayTeamOverride ?: if (defaultIsHome) defaultOpponent else userManagedTeam
+        initialHome to initialAway
+    }
+    val homeTeam = initialMatchup.first
+    val awayTeam = initialMatchup.second
 
     val isUserGame = (userManagedTeam.name == homeTeam.name || userManagedTeam.name == awayTeam.name)
 
@@ -133,6 +139,7 @@ fun PartidaDialog(
     val starName = starPlayer?.name ?: "Estrela do Time"
 
     fun executeClutchPlay(playType: String) {
+        if (!isLiveCoachingActive || isFinished) return
         val baseRoll = (1..100).random() / 100.0 + timeoutBoost
         when (playType) {
             "3PT" -> {
@@ -181,8 +188,13 @@ fun PartidaDialog(
     
     LaunchedEffect(isHalftime, isFinished, currentQuarter, isLiveCoachingActive, hasUsedLiveCoaching) {
         if (!isHalftime && !isFinished && !isLiveCoachingActive) {
-            narration = "${currentQuarter}º Quarto em andamento... As equipes disputam cada posse!"
-            delay(2500)
+            // After the user resolves the 0:15 clutch card, this effect is re-entered only
+            // to finalize the game. Never simulate or score Q4 a second time.
+            val resolvingClutch = currentQuarter == 4 && hasUsedLiveCoaching
+            if (!resolvingClutch) {
+                narration = "${currentQuarter}º Quarto em andamento... As equipes disputam cada posse!"
+                delay(2500)
+            }
 
             val tacticsObj = if (isUserGame) (viewModel.tactics ?: Tactics()) else Tactics()
             val coachObj = if (isUserGame) viewModel.coach else null
@@ -217,16 +229,18 @@ fun PartidaDialog(
             val uPoints = (baseU + (-4..5).random()).coerceIn(12, 45)
             val oPoints = (baseO + (-4..5).random()).coerceIn(12, 45)
 
-            narration = "${currentQuarter}º Quarto: Troca de cestas e jogadas de alto nível!"
-            delay(2500)
+            if (!resolvingClutch) {
+                narration = "${currentQuarter}º Quarto: Troca de cestas e jogadas de alto nível!"
+                delay(2500)
 
-            qUserScores.add(uPoints)
-            qOppScores.add(oPoints)
-            userScore += uPoints
-            oppScore += oPoints
+                qUserScores.add(uPoints)
+                qOppScores.add(oPoints)
+                userScore += uPoints
+                oppScore += oPoints
+            }
 
             if (currentQuarter <= 2) {
-                val subLog = if (isUserGame) viewModel.performAutoSubstitution(currentQuarter) else ""
+                val subLog = if (isUserGame && !resolvingClutch) viewModel.performAutoSubstitution(currentQuarter) else ""
                 val baseMsg = when (currentQuarter) {
                     1 -> "Fim do 1º Quarto! Placar parcial: ${team.name} $userScore x $oppScore ${opponent.name}"
                     else -> "Fim do 2º Quarto! Intervalo de jogo! Placar parcial: ${team.name} $userScore x $oppScore ${opponent.name}"
@@ -240,16 +254,26 @@ fun PartidaDialog(
                     currentQuarter++
                 }
             } else if (currentQuarter in 3..4) {
-                val subLog = if (isUserGame) viewModel.performAutoSubstitution(currentQuarter) else ""
+                val subLog = if (isUserGame && !resolvingClutch) viewModel.performAutoSubstitution(currentQuarter) else ""
+                val shouldOfferClutch = currentQuarter == 4 && LiveMatchRules.shouldOfferClutch(
+                    isUserGame = isUserGame,
+                    hasUsedLiveCoaching = hasUsedLiveCoaching,
+                    userScore = userScore,
+                    opponentScore = oppScore
+                )
                 val baseMsg = when (currentQuarter) {
                     3 -> "Fim do 3º Quarto! Emoção pura! Placar parcial: ${team.name} $userScore x $oppScore ${opponent.name}"
-                    else -> "Fim do 4º Quarto! Apito final!"
+                    else -> if (shouldOfferClutch) {
+                        "4º Quarto • faltam 15 segundos! Placar: ${team.name} $userScore x $oppScore ${opponent.name}."
+                    } else {
+                        "Fim do 4º Quarto! Apito final!"
+                    }
                 }
                 narration = if (subLog.isNotEmpty()) "$baseMsg\n$subLog" else baseMsg
                 delay(3000)
                 
                 if (currentQuarter == 4) {
-                    if (isUserGame && !hasUsedLiveCoaching) {
+                    if (shouldOfferClutch) {
                         isLiveCoachingActive = true
                         narration = "⏱️ MODO TÉCNICO EM TEMPO REAL!\nFaltam 15 segundos no 4º Quarto! Placar: ${team.name} $userScore x $oppScore ${opponent.name}.\nO jogo está acirrado! Faça sua chamada tática decisiva na prancheta!"
                         return@LaunchedEffect
@@ -259,8 +283,12 @@ fun PartidaDialog(
                     val simulator = GameSimulator(context.applicationContext, viewModel.simulationConfig())
                     val baseResult = simulator.simulate(homeTeam, awayTeam)
                     
-                    val finalHomeScore = if (isHome) userScore else oppScore
-                    val finalAwayScore = if (isHome) oppScore else userScore
+                    val finalUserScore = LiveMatchRules.scoreFromQuarters(qUserScores)
+                    val finalOpponentScore = LiveMatchRules.scoreFromQuarters(qOppScores)
+                    userScore = finalUserScore
+                    oppScore = finalOpponentScore
+                    val finalHomeScore = if (isHome) finalUserScore else finalOpponentScore
+                    val finalAwayScore = if (isHome) finalOpponentScore else finalUserScore
                     
                     val finalResult = baseResult.copy(
                         homeScore = finalHomeScore,

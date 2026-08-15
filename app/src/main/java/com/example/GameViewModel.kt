@@ -16,6 +16,8 @@ import com.example.domain.finance.FinanceManager
 import com.example.domain.contract.ContractManager
 import com.example.domain.contract.ContractOffer
 import com.example.domain.rules.ContractRules
+import com.example.domain.rules.SavedGameLoadState
+import com.example.domain.rules.SavedGameStartupRules
 import com.example.domain.playoff.PlayoffManager
 import com.example.domain.roster.RosterManager
 import com.example.domain.season.SeasonManager
@@ -30,7 +32,9 @@ import com.example.utils.CoachFeedbackGenerator
 import com.example.utils.SaveRequestCoordinator
 import com.example.utils.ToastUtils
 import com.google.gson.Gson
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -72,6 +76,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     var latestResult by mutableStateOf<GameSimulator.GameResult?>(null)
     var playoffResult by mutableStateOf<Season.PlayoffResult?>(null)
     var loadErrorMessage by mutableStateOf<String?>(null)
+    var savedGameLoadState by mutableStateOf(SavedGameLoadState.LOADING)
     var draftRookies by mutableStateOf<List<Player>>(emptyList())
     var freeAgents by mutableStateOf<List<Player>>(emptyList())
     /** Current contracts keyed by player ID. The Room contracts table is the durable source. */
@@ -109,6 +114,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             _seasonSimulationProgress.value = value
         }
 
+    private var seasonSimulationJob: Job? = null
+
     // New Game states and settings
     var startingFive by mutableStateOf<List<Player>>(emptyList())
     var difficulty by mutableStateOf(1)
@@ -123,19 +130,24 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun retryLoadSavedGame() {
         loadErrorMessage = null
+        savedGameLoadState = SavedGameLoadState.LOADING
         viewModelScope.launch(Dispatchers.IO) { loadSavedGameFromRoom() }
     }
 
     private suspend fun loadSavedGameFromRoom() {
         try {
             val snapshot = repository.load()
-            if (snapshot == null || snapshot.teamJson == null || snapshot.seasonJson == null || snapshot.coachJson == null) {
+            if (!SavedGameStartupRules.hasRequiredCore(snapshot)) {
                 withContext(Dispatchers.Main) {
                     loadErrorMessage = null
+                    savedGameLoadState = SavedGameLoadState.EMPTY
                     gameState = GameState.SETUP
                 }
                 return
             }
+            // The helper validates the core payload, but Kotlin cannot smart-cast through it.
+            // Re-establish non-nullness explicitly before reading the snapshot fields below.
+            snapshot ?: return
 
             // Room access and JSON reconstruction stay off the main thread. Only the
             // final publication into Compose-observed state happens on Dispatchers.Main.
@@ -146,7 +158,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             val contractType = object : com.google.gson.reflect.TypeToken<List<PlayerContract>>() {}.type
 
             val loadedTeam = gson.fromJson(snapshot.teamJson, NbaTeam::class.java)
-            val loadedCoach = gson.fromJson(snapshot.coachJson, Coach::class.java)
+            val loadedCoach = snapshot.coachJson?.let { gson.fromJson(it, Coach::class.java) }
+                ?: Coach(1, "Técnico Recuperado", 50, 50, 50, 350_000, 1)
             val loadedFinances = snapshot.financeJson?.let { gson.fromJson(it, Finance::class.java) } ?: Finance(100000000)
             val loadedTactics = snapshot.tacticsJson?.let { gson.fromJson(it, Tactics::class.java) } ?: Tactics()
             val loadedSeason = gson.fromJson(snapshot.seasonJson, Season::class.java).apply {
@@ -216,12 +229,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 newsFeed.addAll(loadedNews)
                 latestBoxScore = loadedBoxScore
                 playoffResult = loadedPlayoffResult
+                savedGameLoadState = SavedGameLoadState.READY
                 gameState = loadedGameState
             }
         } catch (e: Exception) {
             e.printStackTrace()
             withContext(Dispatchers.Main) {
                 loadErrorMessage = e.message ?: e::class.java.simpleName
+                savedGameLoadState = SavedGameLoadState.ERROR
                 gameState = GameState.LOAD_ERROR
             }
         }
@@ -231,8 +246,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
 
     fun startNewGame(selectedTeamName: String, coachName: String, offSkill: Int, defSkill: Int, motSkill: Int, selectedDifficulty: Int = 1) {
-        // Invalidate queued snapshots before clearing. Clear shares the same mutex as saves,
-        // so an in-flight old snapshot must finish before the database is cleared.
+        seasonSimulationJob?.cancel()
+        seasonSimulationJob = null
+        seasonSimulationProgress = null
+        // Invalidate queued snapshots before clearing.
+        // Clear shares the same mutex as saves, so an in-flight old snapshot must finish before the database is cleared.
         val resetToken = saveCoordinator.beginReset()
         viewModelScope.launch(Dispatchers.IO) {
             saveMutex.withLock { AutoSaveManager.clearGameState() }
@@ -315,12 +333,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         latestBoxScore = null
 
         gameState = GameState.ACTIVE
+        savedGameLoadState = SavedGameLoadState.READY
 
         saveGame()
     }
 
-    fun saveGame() {
-        val saveTicket = saveCoordinator.nextSave() ?: return
+    fun saveGame(): Job? {
+        val saveTicket = saveCoordinator.nextSave() ?: return null
         val currentTeam = managedTeam
         val currentSeason = season
         val currentFinances = finances
@@ -344,22 +363,33 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val currentContracts = contracts.values.toList()
         val currentPlayoffResult = playoffResult
 
-        viewModelScope.launch(Dispatchers.IO) {
-            saveMutex.withLock {
-                // Only the newest snapshot in the current career may reach Room.
-                if (!saveCoordinator.isCurrent(saveTicket)) return@withLock
-                AutoSaveManager.saveGameState(
-                    team = currentTeam, season = currentSeason, finance = currentFinances,
-                    tactics = currentTactics, coach = currentCoach, history = currentHistory,
-                    awards = currentAwardsCopy, startingFive = currentStartingFive,
-                    freeAgents = currentFreeAgents, difficulty = currentDifficulty,
-                    injuriesEnabled = currentInjuries, autoSubstitutionsEnabled = currentAutoSubs,
-                    assistantNotifications = currentNotes, teamStaff = currentStaff,
-                    teamFacilities = currentFacilities, financeAdvanced = currentFinanceAdv,
-                    newsFeed = currentNews, latestBoxScore = currentBox,
-                    draftRookies = currentDraftRookies, availableStaffMarket = currentStaffMarket,
-                    contracts = currentContracts, playoffResult = currentPlayoffResult
-                )
+        return viewModelScope.launch(Dispatchers.IO) {
+            try {
+                saveMutex.withLock {
+                    if (!saveCoordinator.isCurrent(saveTicket)) return@withLock
+                    AutoSaveManager.saveGameState(
+                        team = currentTeam, season = currentSeason, finance = currentFinances,
+                        tactics = currentTactics, coach = currentCoach, history = currentHistory,
+                        awards = currentAwardsCopy, startingFive = currentStartingFive,
+                        freeAgents = currentFreeAgents, difficulty = currentDifficulty,
+                        injuriesEnabled = currentInjuries, autoSubstitutionsEnabled = currentAutoSubs,
+                        assistantNotifications = currentNotes, teamStaff = currentStaff,
+                        teamFacilities = currentFacilities, financeAdvanced = currentFinanceAdv,
+                        newsFeed = currentNews, latestBoxScore = currentBox,
+                        draftRookies = currentDraftRookies, availableStaffMarket = currentStaffMarket,
+                        contracts = currentContracts, playoffResult = currentPlayoffResult
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    ToastUtils.showToast(
+                        getApplication<Application>().applicationContext,
+                        "Falha ao salvar progresso: ${e.message ?: e::class.java.simpleName}"
+                    )
+                }
             }
         }
     }
@@ -467,6 +497,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearSavedGame(context: Context) {
+        seasonSimulationJob?.cancel()
+        seasonSimulationJob = null
+        seasonSimulationProgress = null
         val resetToken = saveCoordinator.beginReset()
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -482,6 +515,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun resetCareerState() {
         gameState = GameState.SETUP
         loadErrorMessage = null
+        savedGameLoadState = SavedGameLoadState.EMPTY
         managedTeam = null
         coach = null
         season = null
@@ -835,31 +869,136 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (persist) saveGame()
     }
 
-    fun simulateSeasonRemaining(context: Context) {
-        val currentSeason = season ?: return
-        if (currentSeason.currentDay >= 82) return
+    private data class SeasonDayBatch(
+        val userResult: GameSimulator.GameResult,
+        val allResults: List<GameSimulator.GameResult>,
+        val isHome: Boolean
+    )
 
-        viewModelScope.launch(Dispatchers.Main.immediate) {
-            val totalDays = 82
-            while (currentSeason.currentDay < totalDays && coroutineContext.isActive) {
-                seasonSimulationProgress = Pair(currentSeason.currentDay + 1, totalDays)
-                simulateDayInstant(context, persist = false)
-                // Checkpoint every ten days, then perform a final save below.
-                if (currentSeason.currentDay % 10 == 0) saveGame()
-                delay(50)
+    private suspend fun simulateSeasonDayInBackground(
+        context: Context,
+        currentSeason: Season,
+        currentManaged: NbaTeam
+    ): SeasonDayBatch {
+        val matchups = seasonManager.getMatchupsForDay(currentSeason, currentSeason.currentDay)
+        val userMatchup = matchups.firstOrNull {
+            it.first.name == currentManaged.name || it.second.name == currentManaged.name
+        } ?: error("Nenhuma partida encontrada para ${currentManaged.name} no dia ${currentSeason.currentDay + 1}")
+        val isHome = userMatchup.first.name == currentManaged.name
+        val config = simulationConfig(effectsEnabled = false)
+        val appContext = context.applicationContext
+
+        return withContext(Dispatchers.Default) {
+            val simulator = GameSimulator(appContext, config)
+            try {
+                val userResult = simulator.simulate(userMatchup.first, userMatchup.second)
+                val results = matchups.map { (home, away) ->
+                    if (home.name == currentManaged.name || away.name == currentManaged.name) {
+                        userResult
+                    } else {
+                        simulator.simulate(home, away)
+                    }
+                }
+                SeasonDayBatch(userResult = userResult, allResults = results, isHome = isHome)
+            } finally {
+                simulator.release()
             }
-            seasonSimulationProgress = null
-            saveGame()
         }
     }
 
-    fun simulationConfig(): SimulationConfig = SimulationConfig(
+    fun simulateSeasonRemaining(context: Context) {
+        val currentSeason = season ?: return
+        val currentManaged = managedTeam ?: return
+        if (currentSeason.currentDay >= 82 || seasonSimulationJob?.isActive == true) return
+
+        val appContext = context.applicationContext
+        seasonSimulationJob = viewModelScope.launch(Dispatchers.Main.immediate) {
+            val totalDays = 82
+            var persistOnExit = true
+            try {
+                while (currentSeason.currentDay < totalDays && coroutineContext.isActive) {
+                    seasonSimulationProgress = Pair(currentSeason.currentDay + 1, totalDays)
+                    val batch = simulateSeasonDayInBackground(appContext, currentSeason, currentManaged)
+
+                    latestResult = batch.userResult
+                    batch.allResults.forEach(currentSeason::addResult)
+                    currentSeason.advanceDay()
+
+                    val won = if (batch.isHome) {
+                        batch.userResult.homeScore > batch.userResult.awayScore
+                    } else {
+                        batch.userResult.awayScore > batch.userResult.homeScore
+                    }
+                    currentManaged.players.forEach { it.xp += if (won) 15 else 8 }
+
+                    val feedback = CoachFeedbackGenerator.generatePostMatchFeedback(
+                        gameResult = batch.userResult,
+                        managedTeam = currentManaged,
+                        currentDay = currentSeason.currentDay,
+                        seasonNumber = currentSeason.seasonNumber
+                    )
+                    assistantNotifications.addAll(0, feedback)
+
+                    finances?.let { f ->
+                        finances = financeManager.applyRegularSeasonGame(
+                            finance = f,
+                            team = currentManaged,
+                            coach = coach,
+                            result = batch.userResult,
+                            isHome = batch.isHome,
+                            day = currentSeason.currentDay,
+                            ticketPriceOverride = financeAdvanced.ticketPrice,
+                            annualPlayerPayroll = currentManaged.players.sumOf { player ->
+                                contracts[player.id]?.salary ?: player.calculateSalary().toLong()
+                            }
+                        )
+                    }
+
+                    season = currentSeason
+                    managedTeam = currentManaged
+                    if (currentSeason.currentDay >= totalDays) {
+                        currentAwards = AwardsCalculator.calculateAwards(
+                            currentSeason.teams,
+                            currentSeason.standings,
+                            coach?.name ?: "Você",
+                            currentManaged.name
+                        )
+                        gameState = GameState.PLAYOFFS
+                    }
+
+                    if (currentSeason.currentDay % 10 == 0) {
+                        // Pause fast-forward while Gson/Room serializes the live Season.
+                        saveGame()?.join()
+                    }
+                    delay(16)
+                }
+            } catch (cancelled: CancellationException) {
+                persistOnExit = false
+                throw cancelled
+            } catch (e: Exception) {
+                e.printStackTrace()
+                ToastUtils.showToast(
+                    appContext,
+                    "Falha ao simular temporada: ${e.message ?: e::class.java.simpleName}"
+                )
+            } finally {
+                seasonSimulationProgress = null
+                if (persistOnExit) {
+                    saveGame()?.join()
+                }
+                seasonSimulationJob = null
+            }
+        }
+    }
+
+    fun simulationConfig(effectsEnabled: Boolean = true): SimulationConfig = SimulationConfig(
         difficulty = difficulty,
         injuriesEnabled = injuriesEnabled,
         coach = coach,
         tactics = tactics ?: Tactics(),
         managedTeam = managedTeam,
-        finance = finances ?: Finance()
+        finance = finances ?: Finance(),
+        effectsEnabled = effectsEnabled
     )
 
     fun simulatePlayoffsInteractive(context: Context) {

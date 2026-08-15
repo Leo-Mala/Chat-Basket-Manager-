@@ -37,6 +37,27 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Prepare deterministic test debug signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          base64 --decode .github/test-signing/basket-manager-debug.keystore.b64 > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+
+          expected='DB:3E:34:FD:17:33:87:29:B4:C7:58:87:57:C0:AC:93:D7:13:35:C4:56:7B:DA:21:17:A8:21:4F:D5:68:CF:74'
+          actual="$(keytool -list -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey | sed -n 's/^[[:space:]]*SHA256: //p' | head -n 1)"
+          test "$actual" = "$expected"
+          echo "Debug signing SHA256: $actual"
+
+          echo "CI_DEBUG_KEYSTORE_PATH=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
+          echo "CI_DEBUG_KEY_ALIAS=androiddebugkey" >> "$GITHUB_ENV"
+          echo "CI_DEBUG_STORE_PASSWORD=android" >> "$GITHUB_ENV"
+          echo "CI_DEBUG_KEY_PASSWORD=android" >> "$GITHUB_ENV"
+
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses >/dev/null || true
 
@@ -83,6 +104,23 @@ jobs:
 
       - name: Build debug APK
         run: ./gradlew assembleDebug
+
+      - name: Verify debug APK signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='app/build/outputs/apk/debug/app-debug.apk'
+          expected='DB3E34FD17338729B4C7588757C0AC93D71335C4567BDA2117A8214FD568CF74'
+          certs="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk")"
+          echo "$certs"
+          actual="$(printf '%s\n' "$certs" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
+            | head -n 1 \
+            | tr '[:lower:]' '[:upper:]' \
+            | tr -d ':')"
+          test -n "$actual"
+          test "$actual" = "$expected"
+          echo "Verified debug APK signer SHA256: $actual"
 
       - name: Build release APK
         run: ./gradlew assembleRelease
