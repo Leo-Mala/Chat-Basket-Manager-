@@ -1,0 +1,169 @@
+name: Apply settings difficulty sync
+
+on:
+  push:
+    branches:
+      - feature/very-hard-difficulty
+    paths:
+      - .github/workflows/apply-settings-difficulty-sync.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/very-hard-difficulty
+          fetch-depth: 0
+
+      - name: Centralize difficulty levels and sync settings UI
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          repo = Path('.')
+
+          difficulty_file = repo / 'app/src/main/java/com/example/models/DifficultyLevel.kt'
+          difficulty_file.write_text('''package com.example.models
+
+/**
+ * Single source of truth for career difficulty across setup, settings and simulation.
+ * The persisted value remains an Int for backward-compatible saves.
+ */
+enum class DifficultyLevel(
+    val value: Int,
+    val label: String,
+    val description: String,
+    val userModifier: Double,
+    val opponentModifier: Double
+) {
+    EASY(
+        value = 0,
+        label = "Fácil",
+        description = "Maior vantagem em simulações e facilidade para evoluir a franquia.",
+        userModifier = 1.06,
+        opponentModifier = 0.94
+    ),
+    NORMAL(
+        value = 1,
+        label = "Normal / Médio",
+        description = "Desafio equilibrado e realista para a temporada.",
+        userModifier = 0.98,
+        opponentModifier = 1.02
+    ),
+    HARD(
+        value = 2,
+        label = "Difícil",
+        description = "Adversários mais competitivos e menor margem para erros.",
+        userModifier = 0.94,
+        opponentModifier = 1.06
+    ),
+    VERY_HARD(
+        value = 3,
+        label = "Muito Difícil",
+        description = "Desafio extremo: sua equipe rende menos e os adversários recebem vantagem máxima nas simulações.",
+        userModifier = 0.90,
+        opponentModifier = 1.10
+    );
+
+    companion object {
+        fun fromValue(value: Int): DifficultyLevel = entries.firstOrNull { it.value == value } ?: NORMAL
+    }
+}
+''', encoding='utf-8')
+
+          setup = repo / 'app/src/main/java/com/example/ui/SetupScreen.kt'
+          text = setup.read_text(encoding='utf-8')
+          old = '''                        listOf(
+                            0 to ("Fácil" to "Maior vantagem em simulações e facilidade para evoluir a franquia."),
+                            1 to ("Normal / Médio" to "Desafio equilibrado e realista para a temporada."),
+                            2 to ("Difícil" to "Adversários mais competitivos e menor margem para erros."),
+                            3 to ("Muito Difícil" to "Desafio extremo: sua equipe rende menos e os adversários recebem vantagem máxima nas simulações.")
+                        ).forEach { (diffVal, info) ->
+'''
+          new = '''                        DifficultyLevel.entries.forEach { level ->
+                            val diffVal = level.value
+                            val info = level.label to level.description
+'''
+          if old not in text:
+              raise SystemExit('SetupScreen difficulty block not found')
+          setup.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          settings = repo / 'app/src/main/java/com/example/ui/CelebrationSettingsDraft.kt'
+          text = settings.read_text(encoding='utf-8')
+          old = '''                    listOf(
+                        0 to "Fácil",
+                        1 to "Normal",
+                        2 to "Difícil"
+                    ).forEach { (valDiff, textDiff) ->
+'''
+          new = '''                    DifficultyLevel.entries.forEach { level ->
+                        val valDiff = level.value
+                        val textDiff = level.label
+'''
+          if old not in text:
+              raise SystemExit('SettingsDialog difficulty block not found')
+          settings.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          rules = repo / 'app/src/main/java/com/example/simulator/SimulationRules.kt'
+          text = rules.read_text(encoding='utf-8')
+          text = text.replace(
+              'import com.example.models.Coach\n',
+              'import com.example.models.Coach\nimport com.example.models.DifficultyLevel\n',
+              1
+          )
+          old = '''    fun difficultyUserModifier(difficulty: Int): Double = when (difficulty) {
+        0 -> 1.06
+        1 -> 0.98
+        2 -> 0.94
+        3 -> 0.90
+        else -> 0.98
+    }
+
+    fun difficultyOpponentModifier(difficulty: Int): Double = when (difficulty) {
+        0 -> 0.94
+        1 -> 1.02
+        2 -> 1.06
+        3 -> 1.10
+        else -> 1.02
+    }
+'''
+          new = '''    fun difficultyUserModifier(difficulty: Int): Double = DifficultyLevel.fromValue(difficulty).userModifier
+
+    fun difficultyOpponentModifier(difficulty: Int): Double = DifficultyLevel.fromValue(difficulty).opponentModifier
+'''
+          if old not in text:
+              raise SystemExit('SimulationRules difficulty block not found')
+          rules.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          test = repo / 'app/src/test/java/com/example/simulation/SimulationRulesTest.kt'
+          text = test.read_text(encoding='utf-8')
+          needle = '''        assertTrue(SimulationRules.difficultyUserModifier(3) == 0.90)
+        assertTrue(SimulationRules.difficultyOpponentModifier(3) == 1.10)
+'''
+          replacement = '''        assertTrue(SimulationRules.difficultyUserModifier(3) == 0.90)
+        assertTrue(SimulationRules.difficultyOpponentModifier(3) == 1.10)
+        assertTrue(DifficultyLevel.entries.map { it.value } == listOf(0, 1, 2, 3))
+        assertTrue(DifficultyLevel.fromValue(3).label == "Muito Difícil")
+        assertTrue(DifficultyLevel.fromValue(999) == DifficultyLevel.NORMAL)
+'''
+          if needle not in text:
+              raise SystemExit('SimulationRulesTest insertion point not found')
+          test.write_text(text.replace(needle, replacement, 1), encoding='utf-8')
+          PY
+
+          rm .github/workflows/apply-settings-difficulty-sync.yml
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Sync very hard difficulty across settings"
+          git push origin HEAD:feature/very-hard-difficulty
