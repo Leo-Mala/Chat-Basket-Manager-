@@ -74,6 +74,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     var latestResult by mutableStateOf<GameSimulator.GameResult?>(null)
     var playoffResult by mutableStateOf<Season.PlayoffResult?>(null)
     var loadErrorMessage by mutableStateOf<String?>(null)
+    var savedGameLoadState by mutableStateOf(SavedGameLoadState.LOADING)
     var draftRookies by mutableStateOf<List<Player>>(emptyList())
     var freeAgents by mutableStateOf<List<Player>>(emptyList())
     /** Current contracts keyed by player ID. The Room contracts table is the durable source. */
@@ -127,15 +128,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun retryLoadSavedGame() {
         loadErrorMessage = null
+        savedGameLoadState = SavedGameLoadState.LOADING
         viewModelScope.launch(Dispatchers.IO) { loadSavedGameFromRoom() }
     }
 
     private suspend fun loadSavedGameFromRoom() {
         try {
             val snapshot = repository.load()
-            if (snapshot == null || snapshot.teamJson == null || snapshot.seasonJson == null || snapshot.coachJson == null) {
+            if (!SavedGameStartupRules.hasRequiredCore(snapshot)) {
                 withContext(Dispatchers.Main) {
                     loadErrorMessage = null
+                    savedGameLoadState = SavedGameLoadState.EMPTY
                     gameState = GameState.SETUP
                 }
                 return
@@ -150,7 +153,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             val contractType = object : com.google.gson.reflect.TypeToken<List<PlayerContract>>() {}.type
 
             val loadedTeam = gson.fromJson(snapshot.teamJson, NbaTeam::class.java)
-            val loadedCoach = gson.fromJson(snapshot.coachJson, Coach::class.java)
+            val loadedCoach = snapshot.coachJson?.let { gson.fromJson(it, Coach::class.java) }
+                ?: Coach(1, "Técnico Recuperado", 50, 50, 50, 350_000, 1)
             val loadedFinances = snapshot.financeJson?.let { gson.fromJson(it, Finance::class.java) } ?: Finance(100000000)
             val loadedTactics = snapshot.tacticsJson?.let { gson.fromJson(it, Tactics::class.java) } ?: Tactics()
             val loadedSeason = gson.fromJson(snapshot.seasonJson, Season::class.java).apply {
@@ -220,12 +224,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 newsFeed.addAll(loadedNews)
                 latestBoxScore = loadedBoxScore
                 playoffResult = loadedPlayoffResult
+                savedGameLoadState = SavedGameLoadState.READY
                 gameState = loadedGameState
             }
         } catch (e: Exception) {
             e.printStackTrace()
             withContext(Dispatchers.Main) {
                 loadErrorMessage = e.message ?: e::class.java.simpleName
+                savedGameLoadState = SavedGameLoadState.ERROR
                 gameState = GameState.LOAD_ERROR
             }
         }
@@ -322,6 +328,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         latestBoxScore = null
 
         gameState = GameState.ACTIVE
+        savedGameLoadState = SavedGameLoadState.READY
 
         saveGame()
     }
@@ -503,6 +510,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun resetCareerState() {
         gameState = GameState.SETUP
         loadErrorMessage = null
+        savedGameLoadState = SavedGameLoadState.EMPTY
         managedTeam = null
         coach = null
         season = null
