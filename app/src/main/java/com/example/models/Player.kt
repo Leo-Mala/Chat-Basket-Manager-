@@ -133,6 +133,22 @@ data class Player(
         else -> listOf("shooting", "defense", "rebound", "passing")
     }
 
+    /**
+     * High-upside profiles should occasionally be true late bloomers rather than merely owning a
+     * late theoretical peak age. At the exact target age, add only enough role-relevant skill to
+     * move OVR by one point if normal development did not already do so. This is deterministic,
+     * one-season-only and bounded, so it changes peak timing without creating runaway growth.
+     */
+    private fun ensureLateBloomCheckpoint(previousOverall: Int, peakAge: Int) {
+        if (developmentProfile() < 2 || age != peakAge || overall > previousOverall || overall >= 99) return
+        val prime = primeAttributes()
+        var attempts = 0
+        while (overall <= previousOverall && attempts < 6) {
+            boostAttribute(prime[attempts % prime.size], 1)
+            attempts++
+        }
+    }
+
     fun evolveInSeason(ptsInGame: Int = 0) {
         val earnedXp = (8 + ptsInGame / 4).coerceIn(8, 25)
         xp += earnedXp
@@ -191,6 +207,7 @@ data class Player(
     }
 
     fun advanceSeason() {
+        val previousOverall = overall
         age++
         val random = kotlin.random.Random(id * 1009 + age * 9176)
         val all = listOf("shooting", "defense", "rebound", "passing", "athleticism")
@@ -238,6 +255,7 @@ data class Player(
             }
         }
         overall = calculateOverall()
+        ensureLateBloomCheckpoint(previousOverall, peakAge)
     }
 
     fun advanceDay() {
