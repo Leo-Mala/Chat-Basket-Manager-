@@ -326,8 +326,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         saveGame()
     }
 
-    fun saveGame() {
-        val saveTicket = saveCoordinator.nextSave() ?: return
+    fun saveGame(): Job? {
+        val saveTicket = saveCoordinator.nextSave() ?: return null
         val currentTeam = managedTeam
         val currentSeason = season
         val currentFinances = finances
@@ -351,22 +351,33 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val currentContracts = contracts.values.toList()
         val currentPlayoffResult = playoffResult
 
-        viewModelScope.launch(Dispatchers.IO) {
-            saveMutex.withLock {
-                // Only the newest snapshot in the current career may reach Room.
-                if (!saveCoordinator.isCurrent(saveTicket)) return@withLock
-                AutoSaveManager.saveGameState(
-                    team = currentTeam, season = currentSeason, finance = currentFinances,
-                    tactics = currentTactics, coach = currentCoach, history = currentHistory,
-                    awards = currentAwardsCopy, startingFive = currentStartingFive,
-                    freeAgents = currentFreeAgents, difficulty = currentDifficulty,
-                    injuriesEnabled = currentInjuries, autoSubstitutionsEnabled = currentAutoSubs,
-                    assistantNotifications = currentNotes, teamStaff = currentStaff,
-                    teamFacilities = currentFacilities, financeAdvanced = currentFinanceAdv,
-                    newsFeed = currentNews, latestBoxScore = currentBox,
-                    draftRookies = currentDraftRookies, availableStaffMarket = currentStaffMarket,
-                    contracts = currentContracts, playoffResult = currentPlayoffResult
-                )
+        return viewModelScope.launch(Dispatchers.IO) {
+            try {
+                saveMutex.withLock {
+                    if (!saveCoordinator.isCurrent(saveTicket)) return@withLock
+                    AutoSaveManager.saveGameState(
+                        team = currentTeam, season = currentSeason, finance = currentFinances,
+                        tactics = currentTactics, coach = currentCoach, history = currentHistory,
+                        awards = currentAwardsCopy, startingFive = currentStartingFive,
+                        freeAgents = currentFreeAgents, difficulty = currentDifficulty,
+                        injuriesEnabled = currentInjuries, autoSubstitutionsEnabled = currentAutoSubs,
+                        assistantNotifications = currentNotes, teamStaff = currentStaff,
+                        teamFacilities = currentFacilities, financeAdvanced = currentFinanceAdv,
+                        newsFeed = currentNews, latestBoxScore = currentBox,
+                        draftRookies = currentDraftRookies, availableStaffMarket = currentStaffMarket,
+                        contracts = currentContracts, playoffResult = currentPlayoffResult
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    ToastUtils.showToast(
+                        getApplication<Application>().applicationContext,
+                        "Falha ao salvar progresso: ${e.message ?: e::class.java.simpleName}"
+                    )
+                }
             }
         }
     }
@@ -942,7 +953,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                         gameState = GameState.PLAYOFFS
                     }
 
-                    if (currentSeason.currentDay % 10 == 0) saveGame()
+                    if (currentSeason.currentDay % 10 == 0) {
+                        // Pause fast-forward while Gson/Room serializes the live Season.
+                        saveGame()?.join()
+                    }
                     delay(16)
                 }
             } catch (cancelled: CancellationException) {
@@ -956,7 +970,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 )
             } finally {
                 seasonSimulationProgress = null
-                if (persistOnExit) saveGame()
+                if (persistOnExit) {
+                    saveGame()?.join()
+                }
                 seasonSimulationJob = null
             }
         }
