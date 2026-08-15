@@ -2,7 +2,8 @@ name: Patch autosave ordering hardening
 
 on:
   push:
-    branches: [audit/autosave-ordering]
+    branches:
+      - 'audit/autosave-ordering'
 
 permissions:
   contents: write
@@ -11,7 +12,7 @@ jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           ref: audit/autosave-ordering
       - name: Apply autosave coordination patch
@@ -106,118 +107,15 @@ jobs:
               'clearSavedGame reset ordering'
           )
           vm.write_text(text)
-
-          coordinator = Path('app/src/main/java/com/example/utils/SaveRequestCoordinator.kt')
-          coordinator.write_text('''package com.example.utils
-
-/**
- * Coordinates asynchronous snapshots for one GameViewModel.
- *
- * A save ticket is valid only while it is the newest request in the current career.
- * Career resets temporarily block new saves and permanently invalidate every older ticket.
- */
-class SaveRequestCoordinator {
-    data class SaveTicket internal constructor(
-        val generation: Long,
-        val request: Long
-    )
-
-    private var generation = 0L
-    private var request = 0L
-    private var resetInProgress = false
-
-    @Synchronized
-    fun nextSave(): SaveTicket? {
-        if (resetInProgress) return null
-        request += 1
-        return SaveTicket(generation = generation, request = request)
-    }
-
-    @Synchronized
-    fun isCurrent(ticket: SaveTicket): Boolean =
-        !resetInProgress && ticket.generation == generation && ticket.request == request
-
-    @Synchronized
-    fun beginReset(): Long {
-        generation += 1
-        request += 1
-        resetInProgress = true
-        return generation
-    }
-
-    @Synchronized
-    fun isCurrentReset(token: Long): Boolean =
-        resetInProgress && token == generation
-
-    @Synchronized
-    fun finishReset(token: Long): Boolean {
-        if (!isCurrentReset(token)) return false
-        resetInProgress = false
-        return true
-    }
-}
-''')
-
-          test = Path('app/src/test/java/com/example/SaveGenerationTest.kt')
-          test.write_text('''package com.example
-
-import com.example.utils.SaveRequestCoordinator
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
-
-/** Regression coverage for asynchronous save ordering and career reset invalidation. */
-class SaveGenerationTest {
-    @Test
-    fun newerSaveInvalidatesOlderQueuedSnapshot() {
-        val coordinator = SaveRequestCoordinator()
-        val older = coordinator.nextSave()!!
-        val newer = coordinator.nextSave()!!
-
-        assertFalse(coordinator.isCurrent(older))
-        assertTrue(coordinator.isCurrent(newer))
-    }
-
-    @Test
-    fun resetBlocksSavesAndInvalidatesOldCareerTickets() {
-        val coordinator = SaveRequestCoordinator()
-        val oldCareerSave = coordinator.nextSave()!!
-        val reset = coordinator.beginReset()
-
-        assertFalse(coordinator.isCurrent(oldCareerSave))
-        assertNull(coordinator.nextSave())
-        assertTrue(coordinator.isCurrentReset(reset))
-        assertTrue(coordinator.finishReset(reset))
-
-        val newCareerSave = coordinator.nextSave()
-        assertNotNull(newCareerSave)
-        assertFalse(coordinator.isCurrent(oldCareerSave))
-        assertTrue(coordinator.isCurrent(newCareerSave!!))
-    }
-
-    @Test
-    fun newerResetSupersedesOlderResetCompletion() {
-        val coordinator = SaveRequestCoordinator()
-        val firstReset = coordinator.beginReset()
-        val secondReset = coordinator.beginReset()
-
-        assertFalse(coordinator.isCurrentReset(firstReset))
-        assertFalse(coordinator.finishReset(firstReset))
-        assertTrue(coordinator.isCurrentReset(secondReset))
-        assertTrue(coordinator.finishReset(secondReset))
-    }
-}
-''')
           PY
+
+          mkdir -p app/src/main/java/com/example/utils
+          echo 'cGFja2FnZSBjb20uZXhhbXBsZS51dGlscwoKLyoqCiAqIENvb3JkaW5hdGVzIGFzeW5jaHJvbm91cyBzbmFwc2hvdHMgZm9yIG9uZSBHYW1lVmlld01vZGVsLgogKgogKiBBIHNhdmUgdGlja2V0IGlzIHZhbGlkIG9ubHkgd2hpbGUgaXQgaXMgdGhlIG5ld2VzdCByZXF1ZXN0IGluIHRoZSBjdXJyZW50IGNhcmVlci4KICogQ2FyZWVyIHJlc2V0cyB0ZW1wb3JhcmlseSBibG9jayBuZXcgc2F2ZXMgYW5kIHBlcm1hbmVudGx5IGludmFsaWRhdGUgZXZlcnkgb2xkZXIgdGlja2V0LgogKi8KY2xhc3MgU2F2ZVJlcXVlc3RDb29yZGluYXRvciB7CiAgICBkYXRhIGNsYXNzIFNhdmVUaWNrZXQgaW50ZXJuYWwgY29uc3RydWN0b3IoCiAgICAgICAgdmFsIGdlbmVyYXRpb246IExvbmcsCiAgICAgICAgdmFsIHJlcXVlc3Q6IExvbmcKICAgICkKCiAgICBwcml2YXRlIHZhciBnZW5lcmF0aW9uID0gMEwKICAgIHByaXZhdGUgdmFyIHJlcXVlc3QgPSAwTAogICAgcHJpdmF0ZSB2YXIgcmVzZXRJblByb2dyZXNzID0gZmFsc2UKCiAgICBAU3luY2hyb25pemVkCiAgICBmdW4gbmV4dFNhdmUoKTogU2F2ZVRpY2tldD8gewogICAgICAgIGlmIChyZXNldEluUHJvZ3Jlc3MpIHJldHVybiBudWxsCiAgICAgICAgcmVxdWVzdCArPSAxCiAgICAgICAgcmV0dXJuIFNhdmVUaWNrZXQoZ2VuZXJhdGlvbiA9IGdlbmVyYXRpb24sIHJlcXVlc3QgPSByZXF1ZXN0KQogICAgfQoKICAgIEBTeW5jaHJvbml6ZWQKICAgIGZ1biBpc0N1cnJlbnQodGlja2V0OiBTYXZlVGlja2V0KTogQm9vbGVhbiA9CiAgICAgICAgIXJlc2V0SW5Qcm9ncmVzcyAmJiB0aWNrZXQuZ2VuZXJhdGlvbiA9PSBnZW5lcmF0aW9uICYmIHRpY2tldC5yZXF1ZXN0ID09IHJlcXVlc3QKCiAgICBAU3luY2hyb25pemVkCiAgICBmdW4gYmVnaW5SZXNldCgpOiBMb25nIHsKICAgICAgICBnZW5lcmF0aW9uICs9IDEKICAgICAgICByZXF1ZXN0ICs9IDEKICAgICAgICByZXNldEluUHJvZ3Jlc3MgPSB0cnVlCiAgICAgICAgcmV0dXJuIGdlbmVyYXRpb24KICAgIH0KCiAgICBAU3luY2hyb25pemVkCiAgICBmdW4gaXNDdXJyZW50UmVzZXQodG9rZW46IExvbmcpOiBCb29sZWFuID0KICAgICAgICByZXNldEluUHJvZ3Jlc3MgJiYgdG9rZW4gPT0gZ2VuZXJhdGlvbgoKICAgIEBTeW5jaHJvbml6ZWQKICAgIGZ1biBmaW5pc2hSZXNldCh0b2tlbjogTG9uZyk6IEJvb2xlYW4gewogICAgICAgIGlmICghaXNDdXJyZW50UmVzZXQodG9rZW4pKSByZXR1cm4gZmFsc2UKICAgICAgICByZXNldEluUHJvZ3Jlc3MgPSBmYWxzZQogICAgICAgIHJldHVybiB0cnVlCiAgICB9Cn0K' | base64 -d > app/src/main/java/com/example/utils/SaveRequestCoordinator.kt
+          echo 'cGFja2FnZSBjb20uZXhhbXBsZQoKaW1wb3J0IGNvbS5leGFtcGxlLnV0aWxzLlNhdmVSZXF1ZXN0Q29vcmRpbmF0b3IKaW1wb3J0IG9yZy5qdW5pdC5Bc3NlcnQuYXNzZXJ0RmFsc2UKaW1wb3J0IG9yZy5qdW5pdC5Bc3NlcnQuYXNzZXJ0Tm90TnVsbAppbXBvcnQgb3JnLmp1bml0LkFzc2VydC5hc3NlcnROdWxsCmltcG9ydCBvcmcuanVuaXQuQXNzZXJ0LmFzc2VydFRydWUKaW1wb3J0IG9yZy5qdW5pdC5UZXN0CgovKiogUmVncmVzc2lvbiBjb3ZlcmFnZSBmb3IgYXN5bmNocm9ub3VzIHNhdmUgb3JkZXJpbmcgYW5kIGNhcmVlciByZXNldCBpbnZhbGlkYXRpb24uICovCmNsYXNzIFNhdmVHZW5lcmF0aW9uVGVzdCB7CiAgICBAVGVzdAogICAgZnVuIG5ld2VyU2F2ZUludmFsaWRhdGVzT2xkZXJRdWV1ZWRTbmFwc2hvdCgpIHsKICAgICAgICB2YWwgY29vcmRpbmF0b3IgPSBTYXZlUmVxdWVzdENvb3JkaW5hdG9yKCkKICAgICAgICB2YWwgb2xkZXIgPSBjb29yZGluYXRvci5uZXh0U2F2ZSgpISEKICAgICAgICB2YWwgbmV3ZXIgPSBjb29yZGluYXRvci5uZXh0U2F2ZSgpISEKCiAgICAgICAgYXNzZXJ0RmFsc2UoY29vcmRpbmF0b3IuaXNDdXJyZW50KG9sZGVyKSkKICAgICAgICBhc3NlcnRUcnVlKGNvb3JkaW5hdG9yLmlzQ3VycmVudChuZXdlcikpCiAgICB9CgogICAgQFRlc3QKICAgIGZ1biByZXNldEJsb2Nrc1NhdmVzQW5kSW52YWxpZGF0ZXNPbGRDYXJlZXJUaWNrZXRzKCkgewogICAgICAgIHZhbCBjb29yZGluYXRvciA9IFNhdmVSZXF1ZXN0Q29vcmRpbmF0b3IoKQogICAgICAgIHZhbCBvbGRDYXJlZXJTYXZlID0gY29vcmRpbmF0b3IubmV4dFNhdmUoKSEhCiAgICAgICAgdmFsIHJlc2V0ID0gY29vcmRpbmF0b3IuYmVnaW5SZXNldCgpCgogICAgICAgIGFzc2VydEZhbHNlKGNvb3JkaW5hdG9yLmlzQ3VycmVudChvbGRDYXJlZXJTYXZlKSkKICAgICAgICBhc3NlcnROdWxsKGNvb3JkaW5hdG9yLm5leHRTYXZlKCkpCiAgICAgICAgYXNzZXJ0VHJ1ZShjb29yZGluYXRvci5pc0N1cnJlbnRSZXNldChyZXNldCkpCiAgICAgICAgYXNzZXJ0VHJ1ZShjb29yZGluYXRvci5maW5pc2hSZXNldChyZXNldCkpCgogICAgICAgIHZhbCBuZXdDYXJlZXJTYXZlID0gY29vcmRpbmF0b3IubmV4dFNhdmUoKQogICAgICAgIGFzc2VydE5vdE51bGwobmV3Q2FyZWVyU2F2ZSkKICAgICAgICBhc3NlcnRGYWxzZShjb29yZGluYXRvci5pc0N1cnJlbnQob2xkQ2FyZWVyU2F2ZSkpCiAgICAgICAgYXNzZXJ0VHJ1ZShjb29yZGluYXRvci5pc0N1cnJlbnQobmV3Q2FyZWVyU2F2ZSEhKSkKICAgIH0KCiAgICBAVGVzdAogICAgZnVuIG5ld2VyUmVzZXRTdXBlcnNlZGVzT2xkZXJSZXNldENvbXBsZXRpb24oKSB7CiAgICAgICAgdmFsIGNvb3JkaW5hdG9yID0gU2F2ZVJlcXVlc3RDb29yZGluYXRvcigpCiAgICAgICAgdmFsIGZpcnN0UmVzZXQgPSBjb29yZGluYXRvci5iZWdpblJlc2V0KCkKICAgICAgICB2YWwgc2Vjb25kUmVzZXQgPSBjb29yZGluYXRvci5iZWdpblJlc2V0KCkKCiAgICAgICAgYXNzZXJ0RmFsc2UoY29vcmRpbmF0b3IuaXNDdXJyZW50UmVzZXQoZmlyc3RSZXNldCkpCiAgICAgICAgYXNzZXJ0RmFsc2UoY29vcmRpbmF0b3IuZmluaXNoUmVzZXQoZmlyc3RSZXNldCkpCiAgICAgICAgYXNzZXJ0VHJ1ZShjb29yZGluYXRvci5pc0N1cnJlbnRSZXNldChzZWNvbmRSZXNldCkpCiAgICAgICAgYXNzZXJ0VHJ1ZShjb29yZGluYXRvci5maW5pc2hSZXNldChzZWNvbmRSZXNldCkpCiAgICB9Cn0K' | base64 -d > app/src/test/java/com/example/SaveGenerationTest.kt
 
           rm .github/workflows/patch-autosave-ordering.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add app/src/main/java/com/example/GameViewModel.kt \
-                  app/src/main/java/com/example/utils/SaveRequestCoordinator.kt \
-                  app/src/test/java/com/example/SaveGenerationTest.kt \
-                  .github/workflows/patch-autosave-ordering.yml
+          git add -A
           git commit -m 'Harden autosave ordering across resets'
           git push origin HEAD:audit/autosave-ordering
