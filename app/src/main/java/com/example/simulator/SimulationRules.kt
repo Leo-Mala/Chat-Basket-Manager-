@@ -1,6 +1,7 @@
 package com.example.simulator
 
 import com.example.models.Coach
+import com.example.models.DifficultyLevel
 import com.example.models.NbaTeam
 import com.example.models.Tactics
 import kotlin.math.roundToInt
@@ -20,21 +21,9 @@ object SimulationRules {
     private const val MATCHUP_SCALE = 0.34
     private const val SCORE_VARIANCE = 14.0
 
-    fun difficultyUserModifier(difficulty: Int): Double = when (difficulty) {
-        0 -> 1.06
-        1 -> 0.98
-        2 -> 0.94
-        3 -> 0.90
-        else -> 0.98
-    }
+    fun difficultyUserModifier(difficulty: Int): Double = DifficultyLevel.fromValue(difficulty).userModifier
 
-    fun difficultyOpponentModifier(difficulty: Int): Double = when (difficulty) {
-        0 -> 0.94
-        1 -> 1.02
-        2 -> 1.06
-        3 -> 1.10
-        else -> 1.02
-    }
+    fun difficultyOpponentModifier(difficulty: Int): Double = DifficultyLevel.fromValue(difficulty).opponentModifier
 
     fun teamOffense(team: NbaTeam): Double {
         val players = team.players.filter { it.isAvailable() }

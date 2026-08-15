@@ -28,6 +28,9 @@ class SimulationRulesTest {
         assertTrue(opponentModifiers.zipWithNext().all { (easier, harder) -> easier < harder })
         assertTrue(SimulationRules.difficultyUserModifier(3) == 0.90)
         assertTrue(SimulationRules.difficultyOpponentModifier(3) == 1.10)
+        assertTrue(DifficultyLevel.entries.map { it.value } == listOf(0, 1, 2, 3))
+        assertTrue(DifficultyLevel.fromValue(3).label == "Muito Difícil")
+        assertTrue(DifficultyLevel.fromValue(999) == DifficultyLevel.NORMAL)
     }
 
     @Test fun engineProducesNonNegativeStats() {

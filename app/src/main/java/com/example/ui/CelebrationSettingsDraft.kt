@@ -206,11 +206,9 @@ fun SettingsDialog(viewModel: GameViewModel, onExitToMainMenu: (() -> Unit)? = n
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text("Dificuldade", fontWeight = FontWeight.Bold, color = TextWhite, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(8.dp))
-                    listOf(
-                        0 to "Fácil",
-                        1 to "Normal",
-                        2 to "Difícil"
-                    ).forEach { (valDiff, textDiff) ->
+                    DifficultyLevel.entries.forEach { level ->
+                        val valDiff = level.value
+                        val textDiff = level.label
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
