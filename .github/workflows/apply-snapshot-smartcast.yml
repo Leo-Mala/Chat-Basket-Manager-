@@ -17,7 +17,8 @@ jobs:
       - name: Apply snapshot fix
         run: python3 .github/scripts/fix_snapshot_smartcast.py
       - name: Verify fix
-        run: grep -q 'snapshot ?: return' app/src/main/java/com/example/GameViewModel.kt
+        run: |
+          grep -Fq 'snapshot ?: return' app/src/main/java/com/example/GameViewModel.kt
       - name: Commit fix
         run: |
           rm .github/scripts/fix_snapshot_smartcast.py .github/workflows/apply-snapshot-smartcast.yml
