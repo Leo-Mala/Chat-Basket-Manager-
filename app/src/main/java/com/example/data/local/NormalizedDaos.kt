@@ -43,39 +43,51 @@ interface TacticsDao {
 @Dao
 interface SeasonDao {
     @Query("SELECT * FROM seasons ORDER BY seasonNumber") suspend fun all(): List<SeasonEntity>
+    @Query("SELECT * FROM seasons ORDER BY seasonNumber DESC LIMIT 1") suspend fun current(): SeasonEntity?
     @Upsert suspend fun upsert(item: SeasonEntity)
+    @Query("DELETE FROM seasons WHERE id != :seasonId") suspend fun deleteOutsideSeason(seasonId: Int)
     @Query("DELETE FROM seasons") suspend fun clear()
 }
 
 @Dao
 interface StandingDao {
     @Query("SELECT * FROM standings ORDER BY seasonId, teamId") suspend fun all(): List<StandingEntity>
+    @Query("SELECT * FROM standings WHERE seasonId = :seasonId ORDER BY teamId") suspend fun forSeason(seasonId: Int): List<StandingEntity>
     @Upsert suspend fun upsertAll(items: List<StandingEntity>)
     @Query("DELETE FROM standings WHERE seasonId = :seasonId") suspend fun deleteForSeason(seasonId: Int)
+    @Query("DELETE FROM standings WHERE seasonId != :seasonId") suspend fun deleteOutsideSeason(seasonId: Int)
     @Query("DELETE FROM standings") suspend fun clear()
 }
 
 @Dao
 interface GameDao {
     @Query("SELECT * FROM games ORDER BY seasonId, id") suspend fun all(): List<GameEntity>
+    @Query("SELECT * FROM games WHERE seasonId = :seasonId ORDER BY id") suspend fun forSeason(seasonId: Int): List<GameEntity>
     @Upsert suspend fun upsertAll(items: List<GameEntity>)
     @Query("DELETE FROM games WHERE seasonId = :seasonId") suspend fun deleteForSeason(seasonId: Int)
+    @Query("DELETE FROM games WHERE seasonId != :seasonId") suspend fun deleteOutsideSeason(seasonId: Int)
     @Query("DELETE FROM games") suspend fun clear()
 }
 
 @Dao
 interface PlayerGameStatDao {
     @Query("SELECT * FROM player_game_stats ORDER BY gameId, playerId") suspend fun all(): List<PlayerGameStatEntity>
+    @Query("SELECT p.* FROM player_game_stats p INNER JOIN games g ON g.id = p.gameId WHERE g.seasonId = :seasonId ORDER BY p.gameId, p.playerId")
+    suspend fun forSeason(seasonId: Int): List<PlayerGameStatEntity>
     @Upsert suspend fun upsertAll(items: List<PlayerGameStatEntity>)
     @Query("DELETE FROM player_game_stats WHERE gameId IN (SELECT id FROM games WHERE seasonId = :seasonId)") suspend fun deleteForSeason(seasonId: Int)
+    @Query("DELETE FROM player_game_stats WHERE gameId IN (SELECT id FROM games WHERE seasonId != :seasonId)") suspend fun deleteOutsideSeason(seasonId: Int)
     @Query("DELETE FROM player_game_stats") suspend fun clear()
 }
 
 @Dao
 interface GameInjuryDao {
     @Query("SELECT * FROM game_injuries ORDER BY gameId, playerId") suspend fun all(): List<GameInjuryEntity>
+    @Query("SELECT i.* FROM game_injuries i INNER JOIN games g ON g.id = i.gameId WHERE g.seasonId = :seasonId ORDER BY i.gameId, i.playerId")
+    suspend fun forSeason(seasonId: Int): List<GameInjuryEntity>
     @Upsert suspend fun upsertAll(items: List<GameInjuryEntity>)
     @Query("DELETE FROM game_injuries WHERE gameId IN (SELECT id FROM games WHERE seasonId = :seasonId)") suspend fun deleteForSeason(seasonId: Int)
+    @Query("DELETE FROM game_injuries WHERE gameId IN (SELECT id FROM games WHERE seasonId != :seasonId)") suspend fun deleteOutsideSeason(seasonId: Int)
     @Query("DELETE FROM game_injuries") suspend fun clear()
 }
 
