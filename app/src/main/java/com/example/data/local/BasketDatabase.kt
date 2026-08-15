@@ -28,7 +28,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ExpenseEntity::class,
         ContractEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class BasketDatabase : RoomDatabase() {
@@ -132,13 +132,37 @@ abstract class BasketDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE player_game_stats ADD COLUMN teamId TEXT")
+                // Version 6 did not persist which side produced a stat row. Backfill only
+                // when the player's current team still matches one of the game's participants.
+                // Ambiguous legacy rows remain null instead of being duplicated on both sides.
+                db.execSQL(
+                    """
+                    UPDATE player_game_stats
+                    SET teamId = (
+                        SELECT CASE
+                            WHEN p.teamId = g.homeTeamId THEN g.homeTeamId
+                            WHEN p.teamId = g.awayTeamId THEN g.awayTeamId
+                            ELSE NULL
+                        END
+                        FROM players p
+                        JOIN games g ON g.id = player_game_stats.gameId
+                        WHERE p.id = player_game_stats.playerId
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getInstance(context: Context): BasketDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     BasketDatabase::class.java,
                     "basket_manager.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { INSTANCE = it }
             }
     }
 }

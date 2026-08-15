@@ -178,7 +178,8 @@ class GameStateRepository(
             db.gameDao().upsertAll(games)
             val stats = s.history.flatMapIndexed { index, result ->
                 val gameId = "s${sid}-h${index}-${teamId(result.homeTeam)}-${teamId(result.awayTeam)}-${result.homeScore}-${result.awayScore}"
-                result.homeStats.map { (p, st) -> st.toEntity(gameId, p.id) } + result.awayStats.map { (p, st) -> st.toEntity(gameId, p.id) }
+                result.homeStats.map { (p, st) -> st.toEntity(gameId, p.id, teamId(result.homeTeam)) } +
+                    result.awayStats.map { (p, st) -> st.toEntity(gameId, p.id, teamId(result.awayTeam)) }
             }
             db.playerGameStatDao().upsertAll(stats)
             val injuries = s.history.flatMapIndexed { index, result ->
@@ -268,8 +269,11 @@ class GameStateRepository(
                 history.addAll(games.mapNotNull { g ->
                     val home = teamById[g.homeTeamId] ?: return@mapNotNull null
                     val away = teamById[g.awayTeamId] ?: return@mapNotNull null
-                    val homeStats = stats[g.id].orEmpty().mapNotNull { row -> playerById[row.playerId]?.let { p -> p to row.toModel() } }.toMap()
-                    val awayStats = stats[g.id].orEmpty().mapNotNull { row -> playerById[row.playerId]?.let { p -> p to row.toModel() } }.toMap()
+                    val gameStats = stats[g.id].orEmpty()
+                    val homeStats = gameStats.filter { it.teamId == g.homeTeamId }
+                        .mapNotNull { row -> playerById[row.playerId]?.let { p -> p to row.toModel() } }.toMap()
+                    val awayStats = gameStats.filter { it.teamId == g.awayTeamId }
+                        .mapNotNull { row -> playerById[row.playerId]?.let { p -> p to row.toModel() } }.toMap()
                     val gameInjuries = injuries[g.id].orEmpty().mapNotNull { row -> playerById[row.playerId]?.let { GameSimulator.Injury(it, row.daysOut) } }
                     GameSimulator.GameResult(home, away, g.homeScore, g.awayScore, g.attendance, homeStats, awayStats, gameInjuries, g.narration)
                 })
@@ -377,7 +381,8 @@ class GameStateRepository(
     private fun Tactics.toEntity() = TacticsEntity(1, style.name, pace, defensivePressure, offensiveRebound)
     private fun TacticsEntity.toModel() = Tactics(PlayStyle.valueOf(style), pace, defensivePressure, offensiveRebound)
     private fun Season.toEntity() = SeasonEntity(seasonNumber, currentDay, gamesPlayed, seasonNumber, currentMonth, currentYear, userTeamName?.let { n -> teams.firstOrNull { it.name == n }?.let(::teamId) }, nextPlayerId)
-    private fun GameSimulator.PlayerStats.toEntity(gameId: String, playerId: Int) = PlayerGameStatEntity(gameId, playerId, points, rebounds, assists, steals, blocks, turnovers, plusMinus)
+    private fun GameSimulator.PlayerStats.toEntity(gameId: String, playerId: Int, teamId: String) =
+        PlayerGameStatEntity(gameId, playerId, teamId, points, rebounds, assists, steals, blocks, turnovers, plusMinus)
     private fun PlayerGameStatEntity.toModel() = GameSimulator.PlayerStats(points, rebounds, assists, steals, blocks, turnovers, plusMinus)
     private fun SeasonHistory.toEntity() = SeasonHistoryEntity(seasonNumber, champion, mvp, finalScore, topScorer, topScorerPoints)
     private fun Player.toHistoryEntity(season: Int) = SeasonHistoryPlayerEntity(season, id, name, position, overall, shooting, defense, rebound, passing, athleticism, age, xp, trainings, careerPoints, careerRebounds, careerAssists, careerSteals, careerBlocks, careerGames, championships, mvps, seasonPoints, seasonRebounds, seasonAssists, seasonSteals, seasonBlocks, seasonGames)

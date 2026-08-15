@@ -124,6 +124,7 @@ data class GameEntity(
 data class PlayerGameStatEntity(
     val gameId: String,
     val playerId: Int,
+    val teamId: String?,
     val points: Int,
     val rebounds: Int,
     val assists: Int,
