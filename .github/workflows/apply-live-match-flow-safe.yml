@@ -1,0 +1,30 @@
+name: Apply safe live match flow fix
+
+on:
+  push:
+    branches:
+      - fix/live-match-finalization
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/live-match-finalization
+
+      - name: Apply safe live match patch
+        run: python3 .github/scripts/patch_live_match_flow_safe.py
+
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/scripts/patch_live_match_flow_safe.py .github/workflows/apply-live-match-flow-safe.yml
+          git add app/src/main/java/com/example/ui/MatchDialog.kt
+          git commit -m "Fix live match Q4 lifecycle safely"
+          git push origin HEAD:fix/live-match-finalization
