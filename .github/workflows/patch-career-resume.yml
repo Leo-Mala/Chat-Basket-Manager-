@@ -15,26 +15,33 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: agent/extreme-save-resume
-      - name: Apply exact resume-state patch
+      - name: Apply uniquely matched resume-state patch
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
           path = Path('app/src/main/java/com/example/GameViewModel.kt')
           text = path.read_text()
-          old = '''            val loadedGameState = when {
-                loadedSeason.currentDay < 82 -> GameState.ACTIVE
-                loadedPlayoffResult != null -> GameState.CHAMPIONSHIP_CELEBRATION
-                else -> GameState.PLAYOFFS
-            }'''
-          new = '''            val loadedGameState = com.example.domain.season.CareerResumeRules.resolve(
-                currentDay = loadedSeason.currentDay,
-                hasPlayoffResult = loadedPlayoffResult != null,
-                hasDraftClass = loadedDraftRookies.isNotEmpty()
-            )'''
-          if old not in text:
-              raise SystemExit('Expected resume-state block not found; refusing blind patch')
-          path.write_text(text.replace(old, new, 1))
+          pattern = re.compile(
+              r'(?m)^(?P<i>[ \t]*)val loadedGameState = when \{\s*\n'
+              r'[ \t]*loadedSeason\.currentDay < 82 -> GameState\.ACTIVE\s*\n'
+              r'[ \t]*loadedPlayoffResult != null -> GameState\.CHAMPIONSHIP_CELEBRATION\s*\n'
+              r'[ \t]*else -> GameState\.PLAYOFFS\s*\n'
+              r'[ \t]*\}'
+          )
+          matches = list(pattern.finditer(text))
+          if len(matches) != 1:
+              raise SystemExit(f'Expected exactly one resume-state block, found {len(matches)}')
+          indent = matches[0].group('i')
+          replacement = (
+              f'{indent}val loadedGameState = com.example.domain.season.CareerResumeRules.resolve(\n'
+              f'{indent}    currentDay = loadedSeason.currentDay,\n'
+              f'{indent}    hasPlayoffResult = loadedPlayoffResult != null,\n'
+              f'{indent}    hasDraftClass = loadedDraftRookies.isNotEmpty()\n'
+              f'{indent})'
+          )
+          path.write_text(pattern.sub(replacement, text, count=1))
           PY
           rm .github/workflows/patch-career-resume.yml
           git config user.name github-actions[bot]
