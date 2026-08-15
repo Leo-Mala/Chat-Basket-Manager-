@@ -595,35 +595,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
 
-    fun syncStartingFive() {
+    fun syncStartingFive(persist: Boolean = true) {
         val team = managedTeam ?: return
-        val available = team.players.filter { it.isAvailable() }
-        val updated = mutableListOf<Player>()
-
-        // Retain current starting players if they are still available
-        startingFive.forEach { sfPlayer ->
-            available.find { p -> p.id == sfPlayer.id }?.let { matched ->
-                updated.add(matched)
-            }
-        }
-
-        // Fill remaining slots with highest overall available players
-        if (updated.size < 5) {
-            val extra = available
-                .filter { p -> !updated.any { it.id == p.id } }
-                .sortedByDescending { it.overall }
-                .take(5 - updated.size)
-            updated.addAll(extra)
-        }
-        startingFive = updated
-        saveGame()
+        startingFive = rosterManager.syncStartingFive(team, startingFive)
+        if (persist) saveGame()
     }
 
     // Automatic in-game substitutions simulation
     fun performAutoSubstitution(quarter: Int): String {
         if (!autoSubstitutionsEnabled) return ""
         val team = managedTeam ?: return ""
-        syncStartingFive()
+        syncStartingFive(persist = false)
 
         val starters = startingFive.ifEmpty { team.players.filter { it.isAvailable() }.sortedByDescending { it.overall }.take(5) }
         val bench = team.players.filter { it.isAvailable() && starters.none { s -> s.id == it.id } }
@@ -679,7 +661,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             remove(offeredPlayer.id)?.let { put(offeredPlayer.id, it.copy(teamId = myTeamId)) }
         }
         startingFive = startingFive.map { if (it.id == myPlayer.id) offeredPlayer else it }
-        syncStartingFive()
+        syncStartingFive(persist = false)
         saveGame()
     }
 
@@ -895,7 +877,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         freeAgents = transition.freeAgents
         transition.season.teams.find { it.name == managedTeam?.name }?.let {
             managedTeam = it
-            syncStartingFive()
+            syncStartingFive(persist = false)
         }
         finances?.let { f ->
             val tvRights = 85_000_000
@@ -975,7 +957,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         freeAgents = (freeAgents.filter { it.id != selectedPlayer.id } + listOfNotNull(result.releasedPlayer)).distinctBy { it.id }
         val message = if (result.releasedPlayer != null) "${selectedPlayer.name} contratado! ${result.releasedPlayer.name} foi dispensado para abrir vaga." else "${selectedPlayer.name} contratado com sucesso!"
         ToastUtils.showToast(context, message, Toast.LENGTH_LONG)
-        syncStartingFive()
+        syncStartingFive(persist = false)
         saveGame()
         return true
     }

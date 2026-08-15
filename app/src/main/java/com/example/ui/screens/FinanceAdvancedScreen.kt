@@ -8,7 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -100,7 +100,7 @@ fun FinanceAdvancedScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = TextWhite)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar", tint = TextWhite)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CourtMidnight)
@@ -182,10 +182,8 @@ fun FinanceAdvancedScreen(
 
                         Slider(
                             value = ticketPriceState,
-                            onValueChange = {
-                                ticketPriceState = it
-                                onUpdateTicketPrice(it.toInt())
-                            },
+                            onValueChange = { ticketPriceState = it },
+                            onValueChangeFinished = { onUpdateTicketPrice(ticketPriceState.toInt()) },
                             valueRange = 40f..200f,
                             steps = 32,
                             colors = SliderDefaults.colors(
@@ -224,7 +222,7 @@ fun FinanceAdvancedScreen(
                         FinanceRow("Direitos de Transmissão TV", "+$${String.format("%,d", broadcastingEst)}")
                         FinanceRow("Merchandising & Produtos", "+$${String.format("%,d", merchandiseEst)}")
 
-                        Divider(modifier = Modifier.padding(vertical = 8.dp), color = CourtBorder)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = CourtBorder)
 
                         Text(text = "🔴 Despesas Estimadas", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
                         FinanceRow("Folha Salarial Jogadores", "-$${String.format("%,d", totalPlayerSalaries)}")
@@ -235,7 +233,7 @@ fun FinanceAdvancedScreen(
                             FinanceRow("Multa de Luxury Tax", "-$${String.format("%,d", luxuryTax)}")
                         }
 
-                        Divider(modifier = Modifier.padding(vertical = 8.dp), color = CourtBorder)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = CourtBorder)
 
                         FinanceRow(
                             label = "LUCRO/PREJUÍZO LÍQUIDO",

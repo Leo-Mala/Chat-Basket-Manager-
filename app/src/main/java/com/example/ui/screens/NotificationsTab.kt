@@ -322,7 +322,7 @@ fun CoachNotificationCard(
             // Expanded content details
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.padding(top = 8.dp)) {
-                    Divider(color = CourtBorder, thickness = 1.dp)
+                    HorizontalDivider(color = CourtBorder, thickness = 1.dp)
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Strengths
