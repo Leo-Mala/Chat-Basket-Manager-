@@ -60,6 +60,7 @@ import com.example.domain.trade.TradeManager
 import com.example.domain.draft.DraftManager
 import com.example.domain.playoff.PlayoffManager
 import com.example.domain.rules.SavedGameLoadState
+import com.example.domain.season.CareerResumeRules
 import com.example.models.*
 import com.example.simulator.GameSimulator
 import com.example.ui.theme.*
@@ -158,11 +159,20 @@ fun BasketManagerGameApp() {
 
                     MainMenuScreen(
                         onContinue = {
+                            val currentSeason = viewModel.season
+                            if (viewModel.managedTeam != null && currentSeason != null) {
+                                viewModel.gameState = CareerResumeRules.resolve(
+                                    currentDay = currentSeason.currentDay,
+                                    hasPlayoffResult = viewModel.playoffResult != null,
+                                    hasDraftClass = viewModel.draftRookies.isNotEmpty()
+                                )
+                            }
                             showMainMenu = false
                         },
                         onNewCareer = {
-                            // Opening setup must never destroy an existing career. The old save
-                            // is replaced only when startNewGame() is actually confirmed.
+                            // Opening setup must never destroy or reuse the loaded career.
+                            // The persisted save is replaced only after startNewGame() is confirmed.
+                            viewModel.gameState = CareerResumeRules.newCareerState()
                             showMainMenu = false
                         },
                         onSettings = {
@@ -226,4 +236,3 @@ fun BasketManagerGameApp() {
         }
     }
 }
-
