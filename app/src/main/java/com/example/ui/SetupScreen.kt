@@ -331,7 +331,8 @@ fun SetupScreen(viewModel: GameViewModel) {
                         listOf(
                             0 to ("Fácil" to "Maior vantagem em simulações e facilidade para evoluir a franquia."),
                             1 to ("Normal / Médio" to "Desafio equilibrado e realista para a temporada."),
-                            2 to ("Difícil" to "Adversários mais competitivos e menor margem para erros.")
+                            2 to ("Difícil" to "Adversários mais competitivos e menor margem para erros."),
+                            3 to ("Muito Difícil" to "Desafio extremo: sua equipe rende menos e os adversários recebem vantagem máxima nas simulações.")
                         ).forEach { (diffVal, info) ->
                             val isSelected = selectedDifficulty == diffVal
                             Surface(

@@ -24,6 +24,7 @@ object SimulationRules {
         0 -> 1.06
         1 -> 0.98
         2 -> 0.94
+        3 -> 0.90
         else -> 0.98
     }
 
@@ -31,6 +32,7 @@ object SimulationRules {
         0 -> 0.94
         1 -> 1.02
         2 -> 1.06
+        3 -> 1.10
         else -> 1.02
     }
 
