@@ -1,6 +1,7 @@
 package com.example.domain.draft
 
 import com.example.domain.rules.FreeAgencyRules
+import com.example.domain.season.FranchiseStrategyManager
 import com.example.models.NbaTeam
 import com.example.models.Player
 
@@ -25,13 +26,11 @@ class AiDraftManager(
         teams: List<NbaTeam>,
         rookies: Collection<Player>,
         userTeamName: String?,
-        priorityTeamNames: List<String>
+        priorityTeamNames: List<String>,
+        policiesByTeamName: Map<String, FranchiseStrategyManager.Policy> = emptyMap()
     ): Result {
         val teamByName = teams.associateBy { it.name }.toMutableMap()
-        val available = rookies
-            .distinctBy { it.id }
-            .filter { it.age in 18..22 }
-            .toMutableList()
+        val available = rookies.distinctBy { it.id }.filter { it.age in 18..22 }.toMutableList()
         val releasedPlayers = mutableListOf<Player>()
         val picks = mutableListOf<Pick>()
         val orderedNames = (priorityTeamNames + teams.map { it.name }).distinct()
@@ -41,30 +40,38 @@ class AiDraftManager(
             val team = teamByName[teamName] ?: return@forEach
             val weakest = FreeAgencyRules.releaseCandidate(team.players)
             val preferredPosition = weakest?.position
+            val strategy = policiesByTeamName[teamName]?.strategy
 
-            val rookie = available.maxWithOrNull(
-                compareBy<Player> { it.overall }
-                    .thenBy { if (it.position == preferredPosition) 1 else 0 }
-                    .thenBy { -it.id }
-            ) ?: return@forEach
+            val rookie = when (strategy) {
+                FranchiseStrategyManager.Strategy.CONTENDER -> available.maxWithOrNull(
+                    compareBy<Player> { if (it.position == preferredPosition) 1 else 0 }
+                        .thenBy { it.overall }
+                        .thenBy { -it.id }
+                )
+                FranchiseStrategyManager.Strategy.REBUILD,
+                FranchiseStrategyManager.Strategy.YOUNG_CORE,
+                FranchiseStrategyManager.Strategy.AGING_CORE -> available.maxWithOrNull(
+                    compareBy<Player> { it.overall }
+                        .thenBy { -it.age }
+                        .thenBy { -it.id }
+                )
+                else -> available.maxWithOrNull(
+                    compareBy<Player> { it.overall }
+                        .thenBy { if (it.position == preferredPosition) 1 else 0 }
+                        .thenBy { -it.id }
+                )
+            } ?: return@forEach
 
             val draftResult = draftManager.draft(team, rookie)
             teamByName[teamName] = draftResult.team
             available.removeAll { it.id == rookie.id }
             draftResult.releasedPlayer?.let(releasedPlayers::add)
-            picks += Pick(
-                teamName = teamName,
-                rookieId = rookie.id,
-                releasedPlayerId = draftResult.releasedPlayer?.id
-            )
+            picks += Pick(teamName, rookie.id, draftResult.releasedPlayer?.id)
         }
 
         return Result(
             teams = teams.map { teamByName.getValue(it.name) },
-            undraftedRookies = available.sortedWith(
-                compareByDescending<Player> { it.overall }
-                    .thenBy { it.id }
-            ),
+            undraftedRookies = available.sortedWith(compareByDescending<Player> { it.overall }.thenBy { it.id }),
             releasedPlayers = releasedPlayers.distinctBy { it.id },
             picks = picks
         )

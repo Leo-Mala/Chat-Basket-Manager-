@@ -1,6 +1,7 @@
 package com.example.domain.roster
 
 import com.example.domain.rules.FreeAgencyRules
+import com.example.domain.season.FranchiseStrategyManager
 import com.example.models.NbaTeam
 import com.example.models.Player
 
@@ -28,7 +29,8 @@ class AiRosterManager {
         protectedPlayerIds: Set<Int> = emptySet(),
         maxUpgradesPerTeam: Int = 2,
         minimumUpgrade: Int = 4,
-        minimumRosterSize: Int = 12
+        minimumRosterSize: Int = 12,
+        policiesByTeamName: Map<String, FranchiseStrategyManager.Policy> = emptyMap()
     ): Result {
         require(maxUpgradesPerTeam >= 0) { "maxUpgradesPerTeam must be non-negative" }
         require(minimumUpgrade >= 0) { "minimumUpgrade must be non-negative" }
@@ -36,9 +38,6 @@ class AiRosterManager {
 
         val teamByName = teams.associateBy { it.name }.toMutableMap()
         val market = FreeAgencyRules.normalizeMarket(freeAgents).toMutableList()
-        // Only players who entered this CPU free-agency phase are eligible to be signed.
-        // Players released by a CPU team during this phase return to the market, but cannot
-        // trigger a same-window chain of CPU sign/release transactions.
         val signablePlayerIds = market.map { it.id }.toMutableSet()
         val transactions = mutableListOf<Transaction>()
         val orderedNames = (priorityTeamNames + teams.map { it.name }).distinct()
@@ -46,9 +45,8 @@ class AiRosterManager {
         orderedNames.forEach { teamName ->
             if (teamName == userTeamName) return@forEach
             var team = teamByName[teamName] ?: return@forEach
+            val policy = policiesByTeamName[teamName]
 
-            // Contract expirations and retirements create real vacancies. Fill those first from
-            // the pre-existing market instead of manufacturing anonymous replacement rookies.
             while (team.players.size < minimumRosterSize) {
                 val eligible = eligibleMarket(market, signablePlayerIds, protectedPlayerIds)
                 if (eligible.isEmpty()) break
@@ -56,7 +54,7 @@ class AiRosterManager {
                 val neededPosition = weakestCoveredPosition(team)
                 val samePosition = eligible.filter { it.position == neededPosition }
                 val candidatePool = if (samePosition.isNotEmpty()) samePosition else eligible
-                val candidate = bestCandidate(candidatePool) ?: break
+                val candidate = bestCandidate(candidatePool, preferYouth = policy?.preferYouth == true) ?: break
 
                 team = team.copy(players = team.players + candidate)
                 teamByName[teamName] = team
@@ -65,17 +63,17 @@ class AiRosterManager {
                 transactions += Transaction(teamName = teamName, signedPlayerId = candidate.id)
             }
 
-            // Optional upgrades happen only after the roster is playable. Production can choose
-            // zero upgrades while standalone callers retain the historical default of two.
-            for (upgrade in 0 until maxUpgradesPerTeam) {
+            val teamUpgradeLimit = policy?.freeAgencyUpgrades ?: maxUpgradesPerTeam
+            val teamMinimumUpgrade = policy?.minimumFreeAgencyUpgrade ?: minimumUpgrade
+            for (upgrade in 0 until teamUpgradeLimit) {
                 val weakest = FreeAgencyRules.releaseCandidate(team.players) ?: break
                 val eligible = eligibleMarket(market, signablePlayerIds, protectedPlayerIds)
-                    .filter { it.overall >= weakest.overall + minimumUpgrade }
+                    .filter { it.overall >= weakest.overall + teamMinimumUpgrade }
                 if (eligible.isEmpty()) break
 
                 val samePosition = eligible.filter { it.position == weakest.position }
                 val candidatePool = if (samePosition.isNotEmpty()) samePosition else eligible
-                val candidate = bestCandidate(candidatePool) ?: break
+                val candidate = bestCandidate(candidatePool, preferYouth = policy?.preferYouth == true) ?: break
 
                 val updatedPlayers = team.players.toMutableList()
                 val weakestIndex = updatedPlayers.indexOfFirst { it.id == weakest.id }
@@ -108,12 +106,20 @@ class AiRosterManager {
             FreeAgencyRules.validateCandidate(it)
     }
 
-    private fun bestCandidate(players: List<Player>): Player? =
-        players.maxWithOrNull(
-            compareBy<Player> { it.overall }
-                .thenBy { -it.age }
-                .thenBy { -it.id }
-        )
+    private fun bestCandidate(players: List<Player>, preferYouth: Boolean): Player? =
+        if (preferYouth) {
+            players.minWithOrNull(
+                compareBy<Player> { it.age }
+                    .thenByDescending { it.overall }
+                    .thenBy { it.id }
+            )
+        } else {
+            players.maxWithOrNull(
+                compareBy<Player> { it.overall }
+                    .thenBy { -it.age }
+                    .thenBy { -it.id }
+            )
+        }
 
     private fun weakestCoveredPosition(team: NbaTeam): String =
         positions.minWithOrNull(
