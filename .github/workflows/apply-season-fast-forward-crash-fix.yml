@@ -17,6 +17,20 @@ jobs:
         with:
           ref: fix/season-fast-forward-crash
 
+      - name: Normalize patch anchor
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/example/GameViewModel.kt')
+          t = p.read_text()
+          old = '        // Invalidate queued snapshots before clearing. Clear shares the same mutex as saves,\n        // so an in-flight old snapshot must finish before the database is cleared.'
+          new = '        // Invalidate queued snapshots before clearing.\n        // Clear shares the same mutex as saves, so an in-flight old snapshot must finish before the database is cleared.'
+          if old not in t:
+              raise SystemExit('startNewGame patch anchor not found')
+          p.write_text(t.replace(old, new, 1))
+          PY
+
       - name: Apply patch
         run: python3 .github/scripts/apply_season_fast_forward_fix.py
 
