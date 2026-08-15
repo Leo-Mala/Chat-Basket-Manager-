@@ -1,0 +1,32 @@
+name: Apply live match flow fix
+
+on:
+  push:
+    branches:
+      - fix/season-fast-forward-crash
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/season-fast-forward-crash
+
+      - name: Apply live match flow patch
+        run: python3 .github/scripts/patch_live_match_flow.py
+
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/scripts/patch_live_match_flow.py .github/workflows/apply-live-match-flow-fix.yml
+          git add app/src/main/java/com/example/ui/MatchDialog.kt \
+                  app/src/main/java/com/example/domain/rules/LiveMatchRules.kt \
+                  app/src/test/java/com/example/LiveMatchRulesTest.kt
+          git commit -m "Fix live match fourth-quarter finalization"
+          git push origin HEAD:fix/season-fast-forward-crash
