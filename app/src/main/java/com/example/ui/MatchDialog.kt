@@ -59,6 +59,7 @@ import com.example.domain.season.SeasonManager
 import com.example.domain.trade.TradeManager
 import com.example.domain.draft.DraftManager
 import com.example.domain.playoff.PlayoffManager
+import com.example.domain.rules.LiveMatchRules
 import com.example.models.*
 import com.example.simulator.GameSimulator
 import com.example.ui.theme.*
@@ -92,9 +93,14 @@ fun PartidaDialog(
     val currentSeason = viewModel.season ?: return
     val userManagedTeam = viewModel.managedTeam ?: return
 
-    val (defaultOpponent, defaultIsHome) = viewModel.getNextOpponent()
-    val homeTeam = homeTeamOverride ?: if (defaultIsHome) userManagedTeam else defaultOpponent
-    val awayTeam = awayTeamOverride ?: if (defaultIsHome) defaultOpponent else userManagedTeam
+    val initialMatchup = remember(homeTeamOverride?.name, awayTeamOverride?.name) {
+        val (defaultOpponent, defaultIsHome) = viewModel.getNextOpponent()
+        val initialHome = homeTeamOverride ?: if (defaultIsHome) userManagedTeam else defaultOpponent
+        val initialAway = awayTeamOverride ?: if (defaultIsHome) defaultOpponent else userManagedTeam
+        initialHome to initialAway
+    }
+    val homeTeam = initialMatchup.first
+    val awayTeam = initialMatchup.second
 
     val isUserGame = (userManagedTeam.name == homeTeam.name || userManagedTeam.name == awayTeam.name)
 
@@ -132,7 +138,112 @@ fun PartidaDialog(
     val starPlayer = team.players.maxByOrNull { it.overall }
     val starName = starPlayer?.name ?: "Estrela do Time"
 
+    fun finishGame() {
+        isFinished = true
+        val simulator = GameSimulator(context.applicationContext, viewModel.simulationConfig())
+        val baseResult = simulator.simulate(homeTeam, awayTeam)
+
+        val finalUserScore = LiveMatchRules.scoreFromQuarters(qUserScores)
+        val finalOpponentScore = LiveMatchRules.scoreFromQuarters(qOppScores)
+        userScore = finalUserScore
+        oppScore = finalOpponentScore
+        val finalHomeScore = if (isHome) finalUserScore else finalOpponentScore
+        val finalAwayScore = if (isHome) finalOpponentScore else finalUserScore
+
+        val finalResult = baseResult.copy(
+            homeScore = finalHomeScore,
+            awayScore = finalAwayScore
+        )
+
+        simResult = finalResult
+        if (isUserGame) {
+            viewModel.latestResult = finalResult
+            val won = if (isHome) finalResult.homeScore > finalResult.awayScore else finalResult.awayScore > finalResult.homeScore
+            val xpEarned = if (won) 15 else 8
+            team.players.forEach { player ->
+                player.xp += xpEarned
+            }
+        }
+
+        if (onGameFinished != null) {
+            if (isUserGame) {
+                viewModel.finances?.let { f ->
+                    val ticketPrice = when (userManagedTeam.name) {
+                        "Los Angeles Lakers", "Golden State Warriors", "New York Knicks" -> 150
+                        "Chicago Bulls", "Boston Celtics", "Miami Heat" -> 120
+                        "Dallas Mavericks", "Denver Nuggets", "Houston Rockets" -> 100
+                        else -> 80
+                    }
+                    if (isHome) {
+                        val gateRevenue = finalResult.attendance * ticketPrice
+                        f.budget += gateRevenue
+                        f.expenses.add(Expense("Receita de Ingressos (Playoffs)", gateRevenue, "Playoffs"))
+                    }
+                }
+                viewModel.saveGame()
+            }
+            onGameFinished(finalResult)
+        } else {
+            val matchups = viewModel.getMatchupsForDay(currentSeason.currentDay)
+            viewModel.simulateOtherGames(context, matchups, finalResult)
+
+            currentSeason.advanceDay()
+
+            viewModel.finances?.let { f ->
+                val ticketPrice = if (viewModel.financeAdvanced.ticketPrice > 0) viewModel.financeAdvanced.ticketPrice else when (userManagedTeam.name) {
+                    "Los Angeles Lakers", "Golden State Warriors", "New York Knicks" -> 120
+                    "Chicago Bulls", "Boston Celtics", "Miami Heat" -> 100
+                    "Dallas Mavericks", "Denver Nuggets", "Houston Rockets" -> 85
+                    else -> 70
+                }
+                if (isHome) {
+                    val gateRevenue = finalResult.attendance * ticketPrice
+                    f.budget += gateRevenue
+                    f.expenses.add(Expense("Receita de Ingressos", gateRevenue, "Dia ${currentSeason.currentDay}"))
+                }
+
+                val dailySponsorRevenue = f.sponsors.sumOf { it.amountPerYear } / 82
+                f.budget += dailySponsorRevenue
+                f.expenses.add(Expense("Receita de Patrocínio", dailySponsorRevenue, "Dia ${currentSeason.currentDay}"))
+
+                // Share of TV Rights & Merchandise per game
+                val dailyTvMerch = (85_000_000 + 20_000_000) / 82
+                f.budget += dailyTvMerch
+
+                val playerSalaries = userManagedTeam.players.sumOf { it.calculateSalary() / 82 }
+                f.budget -= playerSalaries
+                f.expenses.add(Expense("Salários dos Jogadores", playerSalaries, "Dia ${currentSeason.currentDay}"))
+
+                if (currentSeason.currentDay % 5 == 0) {
+                    val expAmount = 250000
+                    f.budget -= expAmount
+                    f.expenses.add(Expense("Despesas e Salários", expAmount, "Dia ${currentSeason.currentDay}"))
+                }
+
+                // Pay coach salary (once per season)
+                if (!f.coachSalaryPaid && viewModel.coach != null) {
+                    val coachSalary = viewModel.coach?.salary ?: 350000
+                    f.budget -= coachSalary
+                    f.expenses.add(Expense("Salário do Técnico", coachSalary, "Temporada ${currentSeason.seasonNumber}"))
+                    f.coachSalaryPaid = true
+                }
+            }
+
+            viewModel.season = null
+            viewModel.season = currentSeason
+            viewModel.managedTeam = userManagedTeam
+
+            if (currentSeason.currentDay >= 82) {
+                viewModel.currentAwards = AwardsCalculator.calculateAwards(currentSeason.teams, currentSeason.standings, viewModel.coach?.name ?: "Você", viewModel.managedTeam?.name)
+                viewModel.gameState = GameState.PLAYOFFS
+            }
+
+            viewModel.saveGame()
+        }
+    }
+
     fun executeClutchPlay(playType: String) {
+        if (!isLiveCoachingActive || isFinished) return
         val baseRoll = (1..100).random() / 100.0 + timeoutBoost
         when (playType) {
             "3PT" -> {
@@ -148,131 +259,37 @@ fun PartidaDialog(
                 if (baseRoll > 0.30) {
                     val isAndOne = (1..100).random() < 35
                     val pts = if (isAndOne) 3 else 2
-                    userScore += pts
-                    if (qUserScores.isNotEmpty()) qUserScores[qUserScores.lastIndex] = qUserScores.last() + pts
-                    narration = if (isAndOne) {
-                        "💥 0:03 - Infiltração espetacular de $starName no garrafão! ENTERRA COM DUAS MÃOS E SOFRE A FALTA! AND-1 CONVERTIDO! 🔥"
-                    } else {
-                        "💥 0:03 - Infiltração rápida pelo garrafão! $starName corta a defesa e faz a bandeja decisiva! DOIS PONTOS! 🏀"
-                    }
-                } else {
-                    narration = "💥 0:03 - Infiltração forçada no garrafão! A defesa adversária tranca o espaço e bloqueia o arremesso!"
-                }
-            }
-            "ISO" -> {
-                if (baseRoll > 0.35) {
-                    userScore += 2
-                    if (qUserScores.isNotEmpty()) qUserScores[qUserScores.lastIndex] = qUserScores.last() + 2
-                    narration = "🌟 0:04 - ISOLAMENTO TOTAL para $starName! Drible cruzado, cria espaço no x1 e arremessa de meia distância...\n\nSWISH! BOLA LIMPA NA REDE! CESTA DA VITÓRIA NOS SEGUNDOS FINAIS! 🏀🌟"
-                } else {
-                    narration = "🌟 0:04 - Isolamento para $starName! A marcação dupla fecha rápido e força o arremesso contestado que erra o alvo!"
-                }
-            }
-            "FOUL" -> {
-                val oppFt = (1..2).random()
-                oppScore += oppFt
-                if (qOppScores.isNotEmpty()) qOppScores[qOppScores.lastIndex] = qOppScores.last() + oppFt
-                narration = "🛑 0:10 - Falta tática cometida para parar o relógio! ${opponent.name} converte $oppFt lance(s) livre(s).\nPlacar: ${team.name} $userScore x $oppScore ${opponent.name}. Posse de bola final para $starName!"
-            }
-        }
-        hasUsedLiveCoaching = true
-        isLiveCoachingActive = false
-    }
-    
-    LaunchedEffect(isHalftime, isFinished, currentQuarter, isLiveCoachingActive, hasUsedLiveCoaching) {
-        if (!isHalftime && !isFinished && !isLiveCoachingActive) {
-            narration = "${currentQuarter}º Quarto em andamento... As equipes disputam cada posse!"
-            delay(2500)
-
-            val tacticsObj = if (isUserGame) (viewModel.tactics ?: Tactics()) else Tactics()
-            val coachObj = if (isUserGame) viewModel.coach else null
-            val diff = if (isUserGame) viewModel.difficulty else 1
-
-            val userDiffMod = when (diff) {
-                0 -> 1.06 // Fácil: +6% pro usuário
-                1 -> 0.95 // Normal: -5% pro usuário
-                2 -> 0.92 // Difícil: -8% pro usuário
-                else -> 0.95
-            }
-            val oppDiffMod = when (diff) {
-                0 -> 0.92 // Fácil: -8% pro oponente
-                1 -> 1.08 // Normal: +8% pro oponente
-                2 -> 1.10 // Difícil: +10% pro oponente
-                else -> 1.08
-            }
-
-            val userAvgRating = if (team.players.isNotEmpty()) team.players.map { it.overall }.average() else 75.0
-            val oppAvgRating = if (opponent.players.isNotEmpty()) opponent.players.map { it.overall }.average() else 75.0
-
-            val userOff = (userAvgRating / 75.0) * tacticsObj.getOffensiveModifier() * (1 + (coachObj?.getOffensiveBonus() ?: 0.0)) * userDiffMod
-            val userDef = (userAvgRating / 75.0) * tacticsObj.getDefensiveModifier() * (1 + (coachObj?.getDefensiveBonus() ?: 0.0)) * userDiffMod
-
-            val oppOff = (oppAvgRating / 75.0) * oppDiffMod
-            val oppDef = (oppAvgRating / 75.0) * oppDiffMod
-
-            val homeBonus = if (isHome) 1.5 else 0.0
-            val baseU = (24.0 * userOff / oppDef + homeBonus + (tacticsObj.pace - 50) * 0.05).toInt()
-            val baseO = (24.0 * oppOff / userDef + (tacticsObj.pace - 50) * 0.05).toInt()
-
-            val uPoints = (baseU + (-4..5).random()).coerceIn(12, 45)
-            val oPoints = (baseO + (-4..5).random()).coerceIn(12, 45)
-
-            narration = "${currentQuarter}º Quarto: Troca de cestas e jogadas de alto nível!"
-            delay(2500)
-
-            qUserScores.add(uPoints)
-            qOppScores.add(oPoints)
-            userScore += uPoints
-            oppScore += oPoints
-
-            if (currentQuarter <= 2) {
+                           } else if (currentQuarter in 3..4) {
                 val subLog = if (isUserGame) viewModel.performAutoSubstitution(currentQuarter) else ""
-                val baseMsg = when (currentQuarter) {
-                    1 -> "Fim do 1º Quarto! Placar parcial: ${team.name} $userScore x $oppScore ${opponent.name}"
-                    else -> "Fim do 2º Quarto! Intervalo de jogo! Placar parcial: ${team.name} $userScore x $oppScore ${opponent.name}"
-                }
-                narration = if (subLog.isNotEmpty()) "$baseMsg\n$subLog" else baseMsg
-                delay(3000)
-                
-                if (currentQuarter == 2) {
-                    isHalftime = true
-                } else {
+                if (currentQuarter == 3) {
+                    val baseMsg = "Fim do 3º Quarto! Emoção pura! Placar parcial: ${team.name} $userScore x $oppScore ${opponent.name}"
+                    narration = if (subLog.isNotEmpty()) "$baseMsg\n$subLog" else baseMsg
+                    delay(3000)
                     currentQuarter++
-                }
-            } else if (currentQuarter in 3..4) {
-                val subLog = if (isUserGame) viewModel.performAutoSubstitution(currentQuarter) else ""
-                val baseMsg = when (currentQuarter) {
-                    3 -> "Fim do 3º Quarto! Emoção pura! Placar parcial: ${team.name} $userScore x $oppScore ${opponent.name}"
-                    else -> "Fim do 4º Quarto! Apito final!"
-                }
-                narration = if (subLog.isNotEmpty()) "$baseMsg\n$subLog" else baseMsg
-                delay(3000)
-                
-                if (currentQuarter == 4) {
-                    if (isUserGame && !hasUsedLiveCoaching) {
+                } else {
+                    val shouldOfferClutch = LiveMatchRules.shouldOfferClutch(
+                        isUserGame = isUserGame,
+                        hasUsedLiveCoaching = hasUsedLiveCoaching,
+                        userScore = userScore,
+                        opponentScore = oppScore
+                    )
+                    if (shouldOfferClutch) {
+                        val preClutch = "4º Quarto • faltam 15 segundos! Placar: ${team.name} $userScore x $oppScore ${opponent.name}."
+                        narration = if (subLog.isNotEmpty()) "$preClutch\n$subLog" else preClutch
+                        delay(1500)
                         isLiveCoachingActive = true
-                        narration = "⏱️ MODO TÉCNICO EM TEMPO REAL!\nFaltam 15 segundos no 4º Quarto! Placar: ${team.name} $userScore x $oppScore ${opponent.name}.\nO jogo está acirrado! Faça sua chamada tática decisiva na prancheta!"
+                        narration = "⏱️ MODO TÉCNICO EM TEMPO REAL!\nFaltam 15 segundos no 4º Quarto! Placar: ${team.name} $userScore x $oppScore ${opponent.name}.\nEscolha a chamada tática para a última posse."
                         return@LaunchedEffect
                     }
 
-                    isFinished = true
-                    val simulator = GameSimulator(context.applicationContext, viewModel.simulationConfig())
-                    val baseResult = simulator.simulate(homeTeam, awayTeam)
-                    
-                    val finalHomeScore = if (isHome) userScore else oppScore
-                    val finalAwayScore = if (isHome) oppScore else userScore
-                    
-                    val finalResult = baseResult.copy(
-                        homeScore = finalHomeScore,
-                        awayScore = finalAwayScore
-                    )
-                    
-                    simResult = finalResult
-                    if (isUserGame) {
-                        viewModel.latestResult = finalResult
-                        val won = if (isHome) finalResult.homeScore > finalResult.awayScore else finalResult.awayScore > finalResult.homeScore
-                        val xpEarned = if (won) 15 else 8
-                        team.players.forEach { player ->
+                    val finalMsg = "Fim do 4º Quarto! Apito final!"
+                    narration = if (subLog.isNotEmpty()) "$finalMsg\n$subLog" else finalMsg
+                    delay(1500)
+                    finishGame()
+                }
+            }
+        }
+    }                   team.players.forEach { player ->
                             player.xp += xpEarned
                         }
                     }
