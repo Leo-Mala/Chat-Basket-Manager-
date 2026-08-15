@@ -145,6 +145,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 return
             }
+            // The helper validates the core payload, but Kotlin cannot smart-cast through it.
+            // Re-establish non-nullness explicitly before reading the snapshot fields below.
+            snapshot ?: return
 
             // Room access and JSON reconstruction stay off the main thread. Only the
             // final publication into Compose-observed state happens on Dispatchers.Main.
