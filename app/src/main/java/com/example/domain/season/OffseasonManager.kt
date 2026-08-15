@@ -87,7 +87,8 @@ class OffseasonManager(
             userTeamName = advanced.userTeamName,
             priorityTeamNames = priorityTeamNames,
             maxTrades = 3,
-            minimumBalanceGain = 2
+            minimumBalanceGain = 2,
+            policiesByTeamName = policies
         )
         advanced.teams = aiTradeResult.teams
 
