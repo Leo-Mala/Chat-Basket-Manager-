@@ -53,6 +53,11 @@ jobs:
           test "$actual" = "$expected"
           echo "Debug signing SHA256: $actual"
 
+          echo "CI_DEBUG_KEYSTORE_PATH=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
+          echo "CI_DEBUG_KEY_ALIAS=androiddebugkey" >> "$GITHUB_ENV"
+          echo "CI_DEBUG_STORE_PASSWORD=android" >> "$GITHUB_ENV"
+          echo "CI_DEBUG_KEY_PASSWORD=android" >> "$GITHUB_ENV"
+
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses >/dev/null || true
 
@@ -106,10 +111,14 @@ jobs:
           set -euo pipefail
           apk='app/build/outputs/apk/debug/app-debug.apk'
           expected='DB3E34FD17338729B4C7588757C0AC93D71335C4567BDA2117A8214FD568CF74'
-          actual="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" \
+          certs="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk")"
+          echo "$certs"
+          actual="$(printf '%s\n' "$certs" \
             | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
             | head -n 1 \
-            | tr '[:lower:]' '[:upper:]')"
+            | tr '[:lower:]' '[:upper:]' \
+            | tr -d ':')"
+          test -n "$actual"
           test "$actual" = "$expected"
           echo "Verified debug APK signer SHA256: $actual"
 
