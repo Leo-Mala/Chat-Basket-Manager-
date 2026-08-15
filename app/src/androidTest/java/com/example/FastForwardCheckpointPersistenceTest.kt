@@ -19,6 +19,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class FastForwardCheckpointPersistenceTest {
+    // Regression for real GameSimulator work interleaved with Room/Gson checkpoints.
     @Test
     fun realSimulationCanPersistCheckpointsBetweenBatches() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
