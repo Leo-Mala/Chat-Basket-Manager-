@@ -108,9 +108,9 @@ class AiRosterManager {
 
     private fun bestCandidate(players: List<Player>, preferYouth: Boolean): Player? =
         if (preferYouth) {
-            players.maxWithOrNull(
-                compareBy<Player> { -it.overall }
-                    .thenBy { it.age }
+            players.minWithOrNull(
+                compareBy<Player> { it.age }
+                    .thenByDescending { it.overall }
                     .thenBy { it.id }
             )
         } else {
