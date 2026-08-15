@@ -1,5 +1,6 @@
 package com.example.domain.contract
 
+import com.example.domain.season.FranchiseStrategyManager
 import com.example.models.NbaTeam
 import com.example.models.PlayerContract
 
@@ -19,7 +20,8 @@ class AiContractRenewalManager(
         expiredPlayerIds: Set<Int>,
         userTeamName: String?,
         maxRenewalsPerTeam: Int = 3,
-        maximumRenewalAge: Int = 33
+        maximumRenewalAge: Int = 33,
+        policiesByTeamName: Map<String, FranchiseStrategyManager.Policy> = emptyMap()
     ): Result {
         require(maxRenewalsPerTeam >= 0) { "maxRenewalsPerTeam must be non-negative" }
         require(maximumRenewalAge >= 18) { "maximumRenewalAge must be at least 18" }
@@ -30,18 +32,27 @@ class AiContractRenewalManager(
         teams.forEach { team ->
             if (team.name == userTeamName) return@forEach
 
+            val policy = policiesByTeamName[team.name]
+            val teamMaxRenewals = policy?.maxRenewals ?: maxRenewalsPerTeam
+            val teamMaximumAge = policy?.maximumRenewalAge ?: maximumRenewalAge
             val retentionFloor = maxOf(74, team.getAverageOverall().toInt() - 3)
             team.players
                 .asSequence()
                 .filter { it.id in expiredPlayerIds }
-                .filter { it.age <= maximumRenewalAge }
+                .filter { it.age <= teamMaximumAge }
                 .filter { it.overall >= retentionFloor }
                 .sortedWith(
-                    compareByDescending<com.example.models.Player> { it.overall }
-                        .thenBy { it.age }
-                        .thenBy { it.id }
+                    if (policy?.preferYouth == true) {
+                        compareBy<com.example.models.Player> { it.age }
+                            .thenByDescending { it.overall }
+                            .thenBy { it.id }
+                    } else {
+                        compareByDescending<com.example.models.Player> { it.overall }
+                            .thenBy { it.age }
+                            .thenBy { it.id }
+                    }
                 )
-                .take(maxRenewalsPerTeam)
+                .take(teamMaxRenewals)
                 .forEach { player ->
                     nextContracts[player.id] = contractManager.create(
                         player,
