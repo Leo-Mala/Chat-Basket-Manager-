@@ -1,0 +1,57 @@
+name: Apply season complete whistle
+
+on:
+  push:
+    branches:
+      - feature/season-complete-whistle
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/season-complete-whistle
+          fetch-depth: 0
+
+      - name: Patch season completion sound
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/example/GameViewModel.kt')
+          text = path.read_text()
+
+          import_anchor = 'import com.example.utils.SaveSlotManager\n'
+          if 'import com.example.utils.SoundManager\n' not in text:
+              if import_anchor not in text:
+                  raise SystemExit('Import anchor not found')
+              text = text.replace(import_anchor, import_anchor + 'import com.example.utils.SoundManager\n', 1)
+
+          old = '''                    delay(16)\n                }\n            } catch (cancelled: CancellationException) {'''
+          new = '''                    delay(16)\n                }\n\n                if (currentSeason.currentDay >= totalDays) {\n                    viewModelScope.launch {\n                        val completionSound = SoundManager(appContext)\n                        try {\n                            completionSound.playWhistle()\n                            delay(250)\n                        } finally {\n                            completionSound.release()\n                        }\n                    }\n                }\n            } catch (cancelled: CancellationException) {'''
+
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('Simulation completion anchor not found')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Remove temporary workflow and commit
+        run: |
+          rm -f .github/workflows/apply-season-complete-whistle.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Play whistle when season fast-forward completes"
+            git push origin HEAD:feature/season-complete-whistle
+          fi
