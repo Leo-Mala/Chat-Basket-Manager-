@@ -1,0 +1,33 @@
+name: Apply user roster contract fix
+
+on:
+  push:
+    branches:
+      - feature/multiple-save-slots
+    paths:
+      - .github/workflows/apply-user-roster-contract-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/multiple-save-slots
+          fetch-depth: 0
+
+      - name: Apply roster contract fix
+        run: python3 .github/scripts/apply-user-roster-contract-fix.py
+
+      - name: Commit implementation and remove temporary helpers
+        run: |
+          rm .github/scripts/apply-user-roster-contract-fix.py
+          rm .github/workflows/apply-user-roster-contract-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Preserve and recover managed roster across contract expiry"
+          git push origin HEAD:feature/multiple-save-slots
