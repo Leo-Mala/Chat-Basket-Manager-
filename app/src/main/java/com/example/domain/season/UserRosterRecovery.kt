@@ -11,7 +11,7 @@ import com.example.models.PlayerContract
  * Repairs the specific legacy corruption where the managed roster was silently emptied
  * by expired contracts while those same players were moved to free agency.
  *
- * Recovery is intentionally conservative, safe, idempotent and covered by regression tests:
+ * Recovery is intentionally conservative, safe and idempotent:
  * - only the first few days of a new season are eligible;
  * - the immediately preceding season history must exist;
  * - only players that were on that historical managed roster AND are still free agents
