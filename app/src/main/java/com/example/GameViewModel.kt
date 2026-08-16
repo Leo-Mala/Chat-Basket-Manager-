@@ -1074,7 +1074,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun simulatePlayoffsInteractive(context: Context) {
         val currentSeason = season ?: return
         viewModelScope.launch(Dispatchers.Default) {
-            val result = currentSeason.simulatePlayoffs(context.applicationContext, simulationConfig())
+            val result = currentSeason.simulatePlayoffs(context.applicationContext, simulationConfig(effectsEnabled = false))
             withContext(Dispatchers.Main) {
                 finishPlayoffsWithResult(result)
             }
