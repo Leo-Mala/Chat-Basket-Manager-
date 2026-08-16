@@ -139,8 +139,30 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val snapshot = repository.load()
             if (!SavedGameStartupRules.hasRequiredCore(snapshot)) {
+                val appContext = getApplication<Application>().applicationContext
+                SaveSlotManager.clearSlotMetadata(appContext, SaveSlotManager.getActiveSlot(appContext))
                 withContext(Dispatchers.Main) {
                     loadErrorMessage = null
+                    managedTeam = null
+                    coach = null
+                    finances = null
+                    tactics = null
+                    season = null
+                    historyManager = HistoryManager()
+                    currentAwards = null
+                    latestResult = null
+                    playoffResult = null
+                    startingFive = emptyList()
+                    freeAgents = emptyList()
+                    draftRookies = emptyList()
+                    contracts = emptyMap()
+                    availableStaffMarket = emptyList()
+                    assistantNotifications.clear()
+                    teamStaff = TeamStaff()
+                    teamFacilities = TeamFacilities()
+                    financeAdvanced = FinanceAdvanced()
+                    newsFeed.clear()
+                    latestBoxScore = null
                     savedGameLoadState = SavedGameLoadState.EMPTY
                     gameState = GameState.SETUP
                 }
