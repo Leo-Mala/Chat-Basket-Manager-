@@ -26,6 +26,7 @@ data class SaveSlotSummary(
  * are adopted without copying or destructive migration.
  */
 object SaveSlotManager {
+    /** UI and persistence both derive their available career slots from this capacity. */
     const val MAX_SLOTS = 3
 
     private const val PREFS_NAME = "basket_manager_save_slots"
