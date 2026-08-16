@@ -30,6 +30,7 @@ import com.example.utils.AwardsCalculator
 import com.example.utils.AutoSaveManager
 import com.example.utils.CoachFeedbackGenerator
 import com.example.utils.SaveRequestCoordinator
+import com.example.utils.SaveSlotManager
 import com.example.utils.ToastUtils
 import com.google.gson.Gson
 import kotlinx.coroutines.CancellationException
@@ -249,11 +250,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         seasonSimulationJob?.cancel()
         seasonSimulationJob = null
         seasonSimulationProgress = null
+        val appContext = getApplication<Application>().applicationContext
+        val targetSlot = SaveSlotManager.peekPendingNewSlot(appContext)
+            ?: SaveSlotManager.getActiveSlot(appContext)
         // Invalidate queued snapshots before clearing.
         // Clear shares the same mutex as saves, so an in-flight old snapshot must finish before the database is cleared.
         val resetToken = saveCoordinator.beginReset()
         viewModelScope.launch(Dispatchers.IO) {
-            saveMutex.withLock { AutoSaveManager.clearGameState() }
+            saveMutex.withLock {
+                // Do not change the active database until any old-slot save holding this
+                // mutex has completed. This prevents cross-slot writes during a switch.
+                SaveSlotManager.setActiveSlot(appContext, targetSlot)
+                SaveSlotManager.clearPendingNewSlot(appContext)
+                AutoSaveManager.clearGameState()
+            }
             if (!saveCoordinator.isCurrentReset(resetToken)) return@launch
             withContext(Dispatchers.Main) {
                 if (!saveCoordinator.finishReset(resetToken)) return@withContext

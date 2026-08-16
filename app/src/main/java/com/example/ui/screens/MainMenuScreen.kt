@@ -29,6 +29,7 @@ import androidx.compose.ui.window.Dialog
 import com.example.R
 import com.example.ui.components.GameButton
 import com.example.ui.theme.*
+import com.example.utils.SaveSlotSummary
 
 @Composable
 fun MainMenuScreen(
@@ -39,9 +40,15 @@ fun MainMenuScreen(
     teamName: String,
     budget: Int,
     wins: Int,
-    losses: Int
+    losses: Int,
+    saveSlots: List<SaveSlotSummary> = emptyList(),
+    activeSlotId: Int = 1,
+    onContinueSlot: ((Int) -> Unit)? = null,
+    onNewCareerSlot: ((Int) -> Unit)? = null
 ) {
     var selectedFeatureInfo by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showContinueSlots by remember { mutableStateOf(false) }
+    var showNewCareerSlots by remember { mutableStateOf(false) }
 
     // Infinite breathing glow animation for the main logo
     val infiniteTransition = rememberInfiniteTransition(label = "LogoGlow")
@@ -233,7 +240,7 @@ fun MainMenuScreen(
             }
 
             // Saved Game Info Card
-            if (hasSavedGame) {
+            if (teamName.isNotBlank()) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -341,9 +348,17 @@ fun MainMenuScreen(
             ) {
                 if (hasSavedGame) {
                     GameButton(
-                        text = "CONTINUAR CARREIRA",
+                        text = if (saveSlots.count { it.occupied } > 1) "ESCOLHER CARREIRA" else "CONTINUAR CARREIRA",
                         icon = "▶",
-                        onClick = onContinue,
+                        onClick = {
+                            val occupiedSlots = saveSlots.filter { it.occupied }
+                            when {
+                                onContinueSlot == null -> onContinue()
+                                occupiedSlots.size == 1 -> onContinueSlot.invoke(occupiedSlots.first().slotId)
+                                occupiedSlots.isNotEmpty() -> showContinueSlots = true
+                                else -> onContinue()
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         gradient = Brush.horizontalGradient(
                             listOf(BasketOrange, BasketDarkOrange)
@@ -354,7 +369,10 @@ fun MainMenuScreen(
                 GameButton(
                     text = if (hasSavedGame) "NOVA CARREIRA" else "INICIAR NOVA CARREIRA",
                     icon = "🏆",
-                    onClick = onNewCareer,
+                    onClick = {
+                        if (onNewCareerSlot != null && saveSlots.isNotEmpty()) showNewCareerSlots = true
+                        else onNewCareer()
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     gradient = if (hasSavedGame)
                         Brush.horizontalGradient(listOf(CourtLightSlate, CourtDeepSlate))
@@ -378,7 +396,7 @@ fun MainMenuScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "💾 Salvamento automático local ativo",
+                        text = if (saveSlots.isNotEmpty()) "💾 ${saveSlots.count { it.occupied }}/${saveSlots.size} slots ocupados • autosave ativo" else "💾 Salvamento automático local ativo",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = TextMuted
@@ -386,6 +404,36 @@ fun MainMenuScreen(
                 }
             }
         }
+    }
+
+    if (showContinueSlots) {
+        SaveSlotPickerDialog(
+            title = "CONTINUAR CARREIRA",
+            subtitle = "Escolha qual carreira deseja carregar.",
+            slots = saveSlots.filter { it.occupied },
+            activeSlotId = activeSlotId,
+            newCareerMode = false,
+            onDismiss = { showContinueSlots = false },
+            onSelect = { slotId ->
+                showContinueSlots = false
+                onContinueSlot?.invoke(slotId)
+            }
+        )
+    }
+
+    if (showNewCareerSlots) {
+        SaveSlotPickerDialog(
+            title = "NOVA CARREIRA",
+            subtitle = "Escolha um slot. Um slot ocupado só será substituído depois que você confirmar a criação da nova carreira.",
+            slots = saveSlots,
+            activeSlotId = activeSlotId,
+            newCareerMode = true,
+            onDismiss = { showNewCareerSlots = false },
+            onSelect = { slotId ->
+                showNewCareerSlots = false
+                onNewCareerSlot?.invoke(slotId) ?: onNewCareer()
+            }
+        )
     }
 
     // Feature Detail Dialog
@@ -435,7 +483,8 @@ fun MainMenuScreen(
                         Button(
                             onClick = {
                                 selectedFeatureInfo = null
-                                onNewCareer()
+                                if (onNewCareerSlot != null && saveSlots.isNotEmpty()) showNewCareerSlots = true
+                                else onNewCareer()
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.buttonColors(containerColor = BasketOrange),
@@ -444,6 +493,108 @@ fun MainMenuScreen(
                             Text("Iniciar", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun SaveSlotPickerDialog(
+    title: String,
+    subtitle: String,
+    slots: List<SaveSlotSummary>,
+    activeSlotId: Int,
+    newCareerMode: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CourtDeepSlate),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.5.dp, BasketOrange, RoundedCornerShape(20.dp))
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(title, color = ChampionshipGold, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Text(subtitle, color = TextGray, fontSize = 12.sp, lineHeight = 17.sp)
+
+                slots.forEach { slot ->
+                    val selectedBorder = if (slot.slotId == activeSlotId && slot.occupied) ElectricCyan else CourtBorder
+                    Surface(
+                        onClick = { onSelect(slot.slotId) },
+                        color = CourtLightSlate.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, selectedBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "SLOT ${slot.slotId}",
+                                    color = if (slot.occupied) TextWhite else TextMuted,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    if (slot.occupied) "OCUPADO" else "VAZIO",
+                                    color = if (slot.occupied) SuccessGreen else ElectricCyan,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                )
+                            }
+
+                            if (slot.occupied) {
+                                Text(slot.teamName ?: "Carreira salva", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                val seasonText = buildString {
+                                    append("Temporada ${slot.seasonNumber ?: "-"}")
+                                    slot.currentYear?.let { append(" • $it") }
+                                    slot.currentDay?.let { append(" • Jogo ${(it + 1).coerceAtMost(82)}/82") }
+                                }
+                                Text(seasonText, color = TextGray, fontSize = 11.sp)
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    if (slot.wins != null && slot.losses != null) {
+                                        Text("${slot.wins}V-${slot.losses}D", color = SuccessGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    slot.budget?.let {
+                                        Text("$${String.format("%,d", it).replace(',', '.')}", color = ChampionshipGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                if (newCareerMode) {
+                                    Text(
+                                        "⚠ Será substituído somente ao confirmar a nova carreira.",
+                                        color = BasketOrange,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            } else {
+                                Text("Disponível para uma nova carreira", color = TextGray, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CourtBorder),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("CANCELAR", color = TextGray)
                 }
             }
         }
