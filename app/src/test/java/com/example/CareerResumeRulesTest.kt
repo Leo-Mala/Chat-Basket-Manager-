@@ -7,6 +7,11 @@ import org.junit.Test
 
 class CareerResumeRulesTest {
     @Test
+    fun newCareerAlwaysOpensSetupInsteadOfLoadedCareer() {
+        assertEquals(GameState.SETUP, CareerResumeRules.newCareerState())
+    }
+
+    @Test
     fun regularSeasonResumesActive() {
         assertEquals(GameState.ACTIVE, CareerResumeRules.resolve(41, hasPlayoffResult = false, hasDraftClass = false))
     }

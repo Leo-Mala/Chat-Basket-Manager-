@@ -20,6 +20,19 @@ class SimulationRulesTest {
         }
     }
 
+    @Test fun difficultyGetsStrictlyHarderAtEachLevel() {
+        val userModifiers = (0..3).map(SimulationRules::difficultyUserModifier)
+        val opponentModifiers = (0..3).map(SimulationRules::difficultyOpponentModifier)
+
+        assertTrue(userModifiers.zipWithNext().all { (easier, harder) -> easier > harder })
+        assertTrue(opponentModifiers.zipWithNext().all { (easier, harder) -> easier < harder })
+        assertTrue(SimulationRules.difficultyUserModifier(3) == 0.90)
+        assertTrue(SimulationRules.difficultyOpponentModifier(3) == 1.10)
+        assertTrue(DifficultyLevel.entries.map { it.value } == listOf(0, 1, 2, 3))
+        assertTrue(DifficultyLevel.fromValue(3).label == "Muito Difícil")
+        assertTrue(DifficultyLevel.fromValue(999) == DifficultyLevel.NORMAL)
+    }
+
     @Test fun engineProducesNonNegativeStats() {
         val players = List(12) { player(it, 75 + (it % 10)) }
         val result = MatchSimulationEngine(Random(42)).generateTeamLines(players, 112, 108, true, 82.0, 80.0)

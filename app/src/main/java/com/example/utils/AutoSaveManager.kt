@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.withLock
 /** Backward-compatible facade. Persistence is now Room/SQLite via GameStateRepository. */
 object AutoSaveManager {
     private lateinit var repository: GameStateRepository
+    private lateinit var appContext: Context
     private val saveMutex = Mutex()
     private val staffMarketType = object : TypeToken<List<StaffMember>>() {}.type
     val gson: Gson = GsonBuilder()
@@ -19,7 +20,11 @@ object AutoSaveManager {
         .registerTypeAdapter(StaffMember::class.java, StaffMemberJsonAdapter())
         .create()
 
-    fun init(context: Context) { repository = GameStateRepository(context.applicationContext) }
+    fun init(context: Context) {
+        appContext = context.applicationContext
+        SaveSlotManager.clearPendingNewSlot(appContext)
+        repository = GameStateRepository(appContext)
+    }
     fun getRepository(context: Context): GameStateRepository {
         if (!::repository.isInitialized) init(context)
         return repository
@@ -36,7 +41,7 @@ object AutoSaveManager {
         playoffResult: Season.PlayoffResult? = null
     ) = saveMutex.withLock {
         val r = getRepositoryFromInitialized()
-        r.save(GameStateRepository.GameStateSnapshot(
+        val snapshot = GameStateRepository.GameStateSnapshot(
             teamJson = team?.let(gson::toJson), coachJson = coach?.let(gson::toJson), financeJson = finance?.let(gson::toJson),
             tacticsJson = tactics?.let(gson::toJson), seasonJson = season?.let(gson::toJson), historyJson = history?.let(gson::toJson),
             awardsJson = awards?.let(gson::toJson), startingFiveJson = gson.toJson(startingFive.map { it.copy() }),
@@ -46,12 +51,27 @@ object AutoSaveManager {
             financeAdvancedJson = financeAdvanced?.let(gson::toJson), newsFeedJson = gson.toJson(newsFeed.toList()),
             latestBoxScoreJson = latestBoxScore?.let(gson::toJson), playoffResultJson = playoffResult?.let(gson::toJson), difficulty = difficulty,
             injuriesEnabled = injuriesEnabled, autoSubstitutionsEnabled = autoSubstitutionsEnabled
-        ))
+        )
+        r.save(snapshot)
+        if (team != null && season != null) {
+            SaveSlotManager.updateSlot(
+                context = appContext,
+                slotId = SaveSlotManager.getActiveSlot(appContext),
+                team = team,
+                season = season,
+                finance = finance,
+                difficulty = difficulty
+            )
+        }
     }
 
     suspend fun loadGameState(): GameStateRepository.GameStateSnapshot? = getRepositoryFromInitialized().load()
     suspend fun hasSavedGame(): Boolean = loadGameState() != null
-    suspend fun clearGameState() = saveMutex.withLock { getRepositoryFromInitialized().clear() }
+    suspend fun clearGameState() = saveMutex.withLock {
+        val slotId = SaveSlotManager.getActiveSlot(appContext)
+        getRepositoryFromInitialized().clear()
+        SaveSlotManager.clearSlotMetadata(appContext, slotId)
+    }
 
     private fun getRepositoryFromInitialized(): GameStateRepository {
         check(::repository.isInitialized) { "AutoSaveManager.init(context) must be called before persistence operations" }

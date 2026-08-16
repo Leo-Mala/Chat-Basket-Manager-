@@ -22,6 +22,7 @@ import com.example.domain.playoff.PlayoffManager
 import com.example.domain.roster.RosterManager
 import com.example.domain.season.SeasonManager
 import com.example.domain.season.OffseasonManager
+import com.example.domain.season.UserRosterRecovery
 import com.example.domain.trade.TradeManager
 import com.example.models.*
 import com.example.simulator.GameSimulator
@@ -30,6 +31,7 @@ import com.example.utils.AwardsCalculator
 import com.example.utils.AutoSaveManager
 import com.example.utils.CoachFeedbackGenerator
 import com.example.utils.SaveRequestCoordinator
+import com.example.utils.SaveSlotManager
 import com.example.utils.ToastUtils
 import com.google.gson.Gson
 import kotlinx.coroutines.CancellationException
@@ -138,8 +140,30 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val snapshot = repository.load()
             if (!SavedGameStartupRules.hasRequiredCore(snapshot)) {
+                val appContext = getApplication<Application>().applicationContext
+                SaveSlotManager.clearSlotMetadata(appContext, SaveSlotManager.getActiveSlot(appContext))
                 withContext(Dispatchers.Main) {
                     loadErrorMessage = null
+                    managedTeam = null
+                    coach = null
+                    finances = null
+                    tactics = null
+                    season = null
+                    historyManager = HistoryManager()
+                    currentAwards = null
+                    latestResult = null
+                    playoffResult = null
+                    startingFive = emptyList()
+                    freeAgents = emptyList()
+                    draftRookies = emptyList()
+                    contracts = emptyMap()
+                    availableStaffMarket = emptyList()
+                    assistantNotifications.clear()
+                    teamStaff = TeamStaff()
+                    teamFacilities = TeamFacilities()
+                    financeAdvanced = FinanceAdvanced()
+                    newsFeed.clear()
+                    latestBoxScore = null
                     savedGameLoadState = SavedGameLoadState.EMPTY
                     gameState = GameState.SETUP
                 }
@@ -178,9 +202,23 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 ?.let { gson.fromJson<List<AssistantCoachNotification>>(it, listNoteType) }
                 ?: emptyList()
             val canonicalTeam = loadedSeason.teams.find { it.name == loadedTeam.name } ?: loadedTeam
-            val syncedStartingFive = rosterManager.syncStartingFive(canonicalTeam, loadedStartingFive)
+            val rosterRecovery = UserRosterRecovery(contractManager).recover(
+                currentSeasonNumber = loadedSeason.seasonNumber,
+                currentDay = loadedSeason.currentDay,
+                team = canonicalTeam,
+                history = loadedHistory,
+                freeAgents = loadedFreeAgents,
+                contracts = loadedContracts
+            )
+            val effectiveTeam = rosterRecovery.team
+            if (rosterRecovery.recoveredPlayerIds.isNotEmpty()) {
+                loadedSeason.teams = loadedSeason.teams.map { team ->
+                    if (team.name == effectiveTeam.name) effectiveTeam else team
+                }
+            }
+            val syncedStartingFive = rosterManager.syncStartingFive(effectiveTeam, loadedStartingFive)
             val loadedTeamStaff = snapshot.teamStaffJson?.let { gson.fromJson(it, TeamStaff::class.java) }
-                ?: com.example.data.StaffAndFacilitiesGenerator.generateInitialStaff(canonicalTeam.name)
+                ?: com.example.data.StaffAndFacilitiesGenerator.generateInitialStaff(effectiveTeam.name)
             val loadedFacilities = snapshot.facilitiesJson?.let { gson.fromJson(it, TeamFacilities::class.java) } ?: TeamFacilities()
             val loadedFinanceAdvanced = snapshot.financeAdvancedJson?.let { gson.fromJson(it, FinanceAdvanced::class.java) }
                 ?: FinanceAdvanced(activeSponsorships = com.example.data.StaffAndFacilitiesGenerator.generateInitialSponsorships())
@@ -193,7 +231,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     loadedSeason.teams,
                     loadedSeason.standings,
                     loadedCoach.name,
-                    canonicalTeam.name
+                    effectiveTeam.name
                 )
             }
 
@@ -205,7 +243,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
             withContext(Dispatchers.Main) {
                 loadErrorMessage = null
-                managedTeam = canonicalTeam
+                managedTeam = effectiveTeam
                 coach = loadedCoach
                 finances = loadedFinances
                 tactics = loadedTactics
@@ -216,9 +254,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 injuriesEnabled = snapshot.injuriesEnabled
                 autoSubstitutionsEnabled = snapshot.autoSubstitutionsEnabled
                 startingFive = syncedStartingFive
-                freeAgents = loadedFreeAgents
+                freeAgents = rosterRecovery.freeAgents
                 draftRookies = loadedDraftRookies
-                contracts = loadedContracts
+                contracts = rosterRecovery.contracts
                 availableStaffMarket = loadedStaffMarket
                 assistantNotifications.clear()
                 assistantNotifications.addAll(loadedNotifications)
@@ -231,6 +269,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 playoffResult = loadedPlayoffResult
                 savedGameLoadState = SavedGameLoadState.READY
                 gameState = loadedGameState
+            }
+
+            if (rosterRecovery.recoveredPlayerIds.isNotEmpty()) {
+                // Persist once so the repair is durable and will not repeat on every load.
+                saveGame()?.join()
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -249,11 +292,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         seasonSimulationJob?.cancel()
         seasonSimulationJob = null
         seasonSimulationProgress = null
+        val appContext = getApplication<Application>().applicationContext
+        val targetSlot = SaveSlotManager.peekPendingNewSlot(appContext)
+            ?: SaveSlotManager.getActiveSlot(appContext)
         // Invalidate queued snapshots before clearing.
         // Clear shares the same mutex as saves, so an in-flight old snapshot must finish before the database is cleared.
         val resetToken = saveCoordinator.beginReset()
         viewModelScope.launch(Dispatchers.IO) {
-            saveMutex.withLock { AutoSaveManager.clearGameState() }
+            saveMutex.withLock {
+                // Do not change the active database until any old-slot save holding this
+                // mutex has completed. This prevents cross-slot writes during a switch.
+                SaveSlotManager.setActiveSlot(appContext, targetSlot)
+                SaveSlotManager.clearPendingNewSlot(appContext)
+                AutoSaveManager.clearGameState()
+            }
             if (!saveCoordinator.isCurrentReset(resetToken)) return@launch
             withContext(Dispatchers.Main) {
                 if (!saveCoordinator.finishReset(resetToken)) return@withContext

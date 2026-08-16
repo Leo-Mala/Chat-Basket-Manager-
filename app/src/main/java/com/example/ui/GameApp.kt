@@ -60,6 +60,7 @@ import com.example.domain.trade.TradeManager
 import com.example.domain.draft.DraftManager
 import com.example.domain.playoff.PlayoffManager
 import com.example.domain.rules.SavedGameLoadState
+import com.example.domain.season.CareerResumeRules
 import com.example.models.*
 import com.example.simulator.GameSimulator
 import com.example.ui.theme.*
@@ -67,6 +68,7 @@ import com.example.utils.AwardsCalculator
 import com.example.utils.AutoSaveManager
 import com.example.utils.ToastUtils
 import com.example.utils.CoachFeedbackGenerator
+import com.example.utils.SaveSlotManager
 import com.example.ui.screens.MainMenuScreen
 import com.example.ui.screens.StatsTab
 import com.example.ui.screens.NotificationsTab
@@ -92,9 +94,48 @@ fun BasketManagerGameApp() {
 
     var showMainMenu by remember { mutableStateOf(true) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    val menuScope = rememberCoroutineScope()
+    var saveSlots by remember { mutableStateOf(SaveSlotManager.getSlots(context)) }
+    var activeSlotId by remember { mutableIntStateOf(SaveSlotManager.getActiveSlot(context)) }
+    var pendingContinueSlot by remember { mutableStateOf<Int?>(null) }
 
     androidx.activity.compose.BackHandler(enabled = !showMainMenu) {
+        if (viewModel.gameState == GameState.SETUP) {
+            SaveSlotManager.clearPendingNewSlot(context)
+        }
         showMainMenu = true
+    }
+
+    LaunchedEffect(showMainMenu, viewModel.savedGameLoadState) {
+        if (showMainMenu && viewModel.savedGameLoadState == SavedGameLoadState.READY) {
+            val currentTeam = viewModel.managedTeam
+            val currentSeason = viewModel.season
+            if (currentTeam != null && currentSeason != null) {
+                SaveSlotManager.updateSlot(
+                    context = context,
+                    slotId = SaveSlotManager.getActiveSlot(context),
+                    team = currentTeam,
+                    season = currentSeason,
+                    finance = viewModel.finances,
+                    difficulty = viewModel.difficulty
+                )
+            }
+        }
+        activeSlotId = SaveSlotManager.getActiveSlot(context)
+        saveSlots = SaveSlotManager.getSlots(context)
+    }
+
+    LaunchedEffect(viewModel.savedGameLoadState, pendingContinueSlot, activeSlotId) {
+        val pendingSlot = pendingContinueSlot ?: return@LaunchedEffect
+        if (pendingSlot != activeSlotId) return@LaunchedEffect
+        when (viewModel.savedGameLoadState) {
+            SavedGameLoadState.READY -> {
+                pendingContinueSlot = null
+                showMainMenu = false
+            }
+            SavedGameLoadState.EMPTY, SavedGameLoadState.ERROR -> pendingContinueSlot = null
+            SavedGameLoadState.LOADING -> Unit
+        }
     }
 
     AnimatedContent(
@@ -144,26 +185,87 @@ fun BasketManagerGameApp() {
                             Button(onClick = { viewModel.retryLoadSavedGame() }) {
                                 Text("TENTAR CARREGAR NOVAMENTE")
                             }
-                            Text("O save não será apagado por esta tela.", color = TextGray, textAlign = TextAlign.Center)
+                            saveSlots
+                                .filter { it.occupied && it.slotId != activeSlotId }
+                                .forEach { slot ->
+                                    OutlinedButton(
+                                        onClick = {
+                                            SaveSlotManager.clearPendingNewSlot(context)
+                                            SaveSlotManager.setActiveSlot(context, slot.slotId)
+                                            activeSlotId = slot.slotId
+                                            pendingContinueSlot = slot.slotId
+                                            viewModel.retryLoadSavedGame()
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("ABRIR SLOT ${slot.slotId} — ${slot.teamName ?: "CARREIRA SALVA"}")
+                                    }
+                                }
+                            Text("O save com erro não será apagado por esta tela.", color = TextGray, textAlign = TextAlign.Center)
                         }
                     }
                 }
 
                 SavedGameLoadState.EMPTY, SavedGameLoadState.READY -> {
-                    val hasSavedGame = viewModel.savedGameLoadState == SavedGameLoadState.READY && viewModel.managedTeam != null
-                    val teamName = viewModel.managedTeam?.name ?: ""
-                    val budget = viewModel.finances?.budget ?: 0
+                    val hasSavedGame = saveSlots.any { it.occupied }
+                    val teamName = if (viewModel.savedGameLoadState == SavedGameLoadState.READY) viewModel.managedTeam?.name.orEmpty() else ""
+                    val budget = if (viewModel.savedGameLoadState == SavedGameLoadState.READY) viewModel.finances?.budget ?: 0 else 0
                     val wins = viewModel.season?.standings?.get(teamName)?.wins ?: 0
                     val losses = viewModel.season?.standings?.get(teamName)?.losses ?: 0
 
+                    val resumeLoadedCareer: () -> Unit = {
+                        val currentSeason = viewModel.season
+                        if (viewModel.managedTeam != null && currentSeason != null) {
+                            viewModel.gameState = CareerResumeRules.resolve(
+                                currentDay = currentSeason.currentDay,
+                                hasPlayoffResult = viewModel.playoffResult != null,
+                                hasDraftClass = viewModel.draftRookies.isNotEmpty()
+                            )
+                            showMainMenu = false
+                        }
+                    }
+
                     MainMenuScreen(
-                        onContinue = {
-                            showMainMenu = false
-                        },
+                        onContinue = resumeLoadedCareer,
                         onNewCareer = {
-                            // Opening setup must never destroy an existing career. The old save
-                            // is replaced only when startNewGame() is actually confirmed.
-                            showMainMenu = false
+                            val targetSlot = saveSlots.firstOrNull { !it.occupied }?.slotId ?: activeSlotId
+                            menuScope.launch {
+                                if (viewModel.savedGameLoadState == SavedGameLoadState.READY && viewModel.managedTeam != null) {
+                                    viewModel.saveGame()?.join()
+                                }
+                                SaveSlotManager.setPendingNewSlot(context, targetSlot)
+                                viewModel.gameState = CareerResumeRules.newCareerState()
+                                showMainMenu = false
+                            }
+                        },
+                        onContinueSlot = { slotId ->
+                            if (slotId == activeSlotId &&
+                                viewModel.savedGameLoadState == SavedGameLoadState.READY &&
+                                viewModel.managedTeam != null
+                            ) {
+                                resumeLoadedCareer()
+                            } else {
+                                menuScope.launch {
+                                    if (viewModel.savedGameLoadState == SavedGameLoadState.READY && viewModel.managedTeam != null) {
+                                        viewModel.saveGame()?.join()
+                                    }
+                                    SaveSlotManager.clearPendingNewSlot(context)
+                                    SaveSlotManager.setActiveSlot(context, slotId)
+                                    activeSlotId = slotId
+                                    pendingContinueSlot = slotId
+                                    viewModel.retryLoadSavedGame()
+                                }
+                            }
+                        },
+                        onNewCareerSlot = { slotId ->
+                            menuScope.launch {
+                                if (viewModel.savedGameLoadState == SavedGameLoadState.READY && viewModel.managedTeam != null) {
+                                    viewModel.saveGame()?.join()
+                                }
+                                SaveSlotManager.setPendingNewSlot(context, slotId)
+                                viewModel.gameState = CareerResumeRules.newCareerState()
+                                showMainMenu = false
+                            }
                         },
                         onSettings = {
                             showSettingsDialog = true
@@ -172,7 +274,9 @@ fun BasketManagerGameApp() {
                         teamName = teamName,
                         budget = budget,
                         wins = wins,
-                        losses = losses
+                        losses = losses,
+                        saveSlots = saveSlots,
+                        activeSlotId = activeSlotId
                     )
 
                     if (showSettingsDialog) {
@@ -226,4 +330,3 @@ fun BasketManagerGameApp() {
         }
     }
 }
-

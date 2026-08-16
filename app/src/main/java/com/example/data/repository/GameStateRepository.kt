@@ -7,6 +7,7 @@ import com.example.data.local.*
 import com.example.models.*
 import com.example.simulator.GameSimulator
 import com.example.utils.PrefsKeys
+import com.example.utils.SaveSlotManager
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +25,8 @@ class GameStateRepository(
     private val context: Context,
     private val database: BasketDatabase? = null
 ) {
-    private val db = database ?: BasketDatabase.getInstance(context.applicationContext)
+    private val db: BasketDatabase
+        get() = database ?: BasketDatabase.getInstance(context.applicationContext)
     private val gson: Gson = GsonBuilder().enableComplexMapKeySerialization().create()
 
     suspend fun load(): GameStateSnapshot? = withContext(Dispatchers.IO) {
@@ -35,7 +37,9 @@ class GameStateRepository(
             validateNormalizedCore(teams, seasons)
             normalizedSnapshot()
         } else {
-            val legacy = db.gameStateDao().get()?.let { GameStateSnapshot.fromEntity(it) } ?: migrateLegacyPreferences()
+            val allowLegacyPreferences = database != null || SaveSlotManager.getActiveSlot(context) == 1
+            val legacy = db.gameStateDao().get()?.let { GameStateSnapshot.fromEntity(it) }
+                ?: if (allowLegacyPreferences) migrateLegacyPreferences() else null
             legacy?.also { normalizeLegacySnapshot(it) }
         }
     }

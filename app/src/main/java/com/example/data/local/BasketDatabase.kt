@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.utils.SaveSlotManager
 
 @Database(
     entities = [
@@ -52,7 +53,8 @@ abstract class BasketDatabase : RoomDatabase() {
     abstract fun contractDao(): ContractDao
 
     companion object {
-        @Volatile private var INSTANCE: BasketDatabase? = null
+        private const val LEGACY_DATABASE_NAME = "basket_manager.db"
+        private val INSTANCES = mutableMapOf<String, BasketDatabase>()
 
         internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -156,13 +158,30 @@ abstract class BasketDatabase : RoomDatabase() {
             }
         }
 
+        fun databaseNameForSlot(slotId: Int): String {
+            require(slotId in 1..SaveSlotManager.MAX_SLOTS) { "Invalid save slot: $slotId" }
+            return if (slotId == 1) LEGACY_DATABASE_NAME else "basket_manager_slot_${slotId}.db"
+        }
+
         fun getInstance(context: Context): BasketDatabase =
-            INSTANCE ?: synchronized(this) {
-                INSTANCE ?: Room.databaseBuilder(
+            getInstance(context, SaveSlotManager.getActiveSlot(context.applicationContext))
+
+        fun getInstance(context: Context, slotId: Int): BasketDatabase {
+            val dbName = databaseNameForSlot(slotId)
+            return INSTANCES[dbName] ?: synchronized(this) {
+                INSTANCES[dbName] ?: Room.databaseBuilder(
                     context.applicationContext,
                     BasketDatabase::class.java,
-                    "basket_manager.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { INSTANCE = it }
+                    dbName
+                ).addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7
+                ).build().also { INSTANCES[dbName] = it }
             }
+        }
     }
 }

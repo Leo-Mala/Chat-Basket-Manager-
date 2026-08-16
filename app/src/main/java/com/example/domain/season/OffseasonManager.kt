@@ -53,10 +53,32 @@ class OffseasonManager(
         val policies = franchiseStrategyManager.policies(currentSeason.teams, currentSeason.standings)
 
         val contractResult = contractManager.advanceSeason(currentContracts.values)
+
+        // The game currently has no user-facing contract-renewal phase. Previously,
+        // every expired contract on the managed team was therefore treated as an
+        // intentional non-renewal and the player was silently removed from the roster.
+        // After the longest initial deals (4 years) expired, a long career could be
+        // reduced to only recently drafted rookies. Until an explicit negotiation UI
+        // exists, preserve eligible managed-team players with a market-value renewal.
+        val userTeam = currentSeason.teams.firstOrNull { it.name == currentSeason.userTeamName }
+        val userRenewals = userTeam?.players.orEmpty()
+            .asSequence()
+            .filter { it.id in contractResult.expiredPlayerIds }
+            // A player at MAX_PLAYER_AGE will age out during this transition; do not
+            // manufacture a contract that is immediately discarded by retirement.
+            .filter { it.age < SeasonRules.MAX_PLAYER_AGE }
+            .associate { player ->
+                player.id to contractManager.create(
+                    player,
+                    userTeam!!.abbreviation,
+                    contractManager.recommendedOffer(player)
+                )
+            }
+
         val renewalResult = aiContractRenewalManager.renewExpiring(
             teams = currentSeason.teams,
-            continuingContracts = contractResult.contracts,
-            expiredPlayerIds = contractResult.expiredPlayerIds,
+            continuingContracts = contractResult.contracts + userRenewals,
+            expiredPlayerIds = contractResult.expiredPlayerIds - userRenewals.keys,
             userTeamName = currentSeason.userTeamName,
             policiesByTeamName = policies
         )

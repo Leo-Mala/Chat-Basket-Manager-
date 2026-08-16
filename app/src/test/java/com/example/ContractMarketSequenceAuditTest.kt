@@ -66,11 +66,11 @@ class ContractMarketSequenceAuditTest {
     }
 
     @Test
-    fun userStarExpirationMovesToFreeAgencyWithoutGhostContract() {
+    fun userStarExpirationRenewsInsteadOfSilentlyDeletingManagedRoster() {
         val season = initialSeason()
         val userTeam = season.teams.first()
-        val expiring = userTeam.players.filter { it.age <= 33 }.maxByOrNull { it.overall }
-            ?: userTeam.players.maxByOrNull { it.overall }!!
+        val expiring = userTeam.players.filter { it.age < com.example.domain.rules.SeasonRules.MAX_PLAYER_AGE }
+            .maxByOrNull { it.overall } ?: userTeam.players.first()
         val contracts = initialContracts(season).toMutableMap()
         contracts[expiring.id] = contractManager.create(
             expiring,
@@ -79,10 +79,12 @@ class ContractMarketSequenceAuditTest {
         )
 
         val result = OffseasonManager(contractManager = contractManager).advance(season, contracts, emptyList())
+        val managedAfter = result.season.teams.first { it.name == userTeam.name }
+        val renewed = result.contracts[expiring.id]
 
-        assertFalse(result.season.teams.first { it.name == userTeam.name }.players.any { it.id == expiring.id })
-        assertFalse(result.contracts.containsKey(expiring.id))
-        assertTrue("expired user star should enter the market", result.freeAgents.any { it.id == expiring.id })
+        assertTrue("expired managed-team player must stay on roster until a manual renewal UI exists", managedAfter.players.any { it.id == expiring.id })
+        assertTrue("managed-team renewal must create a replacement contract", renewed != null && renewed.yearsRemaining in 1..5)
+        assertFalse("renewed managed-team player cannot also appear in free agency", result.freeAgents.any { it.id == expiring.id })
     }
 
     @Test

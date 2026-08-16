@@ -328,11 +328,9 @@ fun SetupScreen(viewModel: GameViewModel) {
                         }
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        listOf(
-                            0 to ("Fácil" to "Maior vantagem em simulações e facilidade para evoluir a franquia."),
-                            1 to ("Normal / Médio" to "Desafio equilibrado e realista para a temporada."),
-                            2 to ("Difícil" to "Adversários mais competitivos e menor margem para erros.")
-                        ).forEach { (diffVal, info) ->
+                        DifficultyLevel.entries.forEach { level ->
+                            val diffVal = level.value
+                            val info = level.label to level.description
                             val isSelected = selectedDifficulty == diffVal
                             Surface(
                                 modifier = Modifier
