@@ -6,12 +6,14 @@ import com.example.domain.contract.ContractOffer
 import com.example.domain.season.OffseasonManager
 import com.example.models.Season
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OffseasonManagerTest {
     @Test
-    fun userExpiredContractIsReleasedAndNewRosterPlayersReceiveContracts() {
+    fun userExpiredContractIsRenewedAndRosterPlayersReceiveContracts() {
         val teams = NbaDataGenerator.getAllTeams()
         val userTeam = teams.first()
         val season = Season(
@@ -21,13 +23,19 @@ class OffseasonManagerTest {
             userTeamName = userTeam.name
         }
         val player = userTeam.players.first()
-        val contract = ContractManager().create(player, userTeam.abbreviation, ContractOffer(1_000_000, 1))
+        val contractManager = ContractManager()
+        val contract = contractManager.create(player, userTeam.abbreviation, ContractOffer(1_000_000, 1))
 
-        val result = OffseasonManager().advance(season, mapOf(player.id to contract), emptyList())
+        val result = OffseasonManager(contractManager).advance(season, mapOf(player.id to contract), emptyList())
+        val managedAfter = result.season.teams.first { it.name == userTeam.name }
+        val renewed = result.contracts[player.id]
 
         assertEquals(2, result.season.seasonNumber)
-        assertTrue(result.freeAgents.any { it.id == player.id })
-        assertTrue(result.contracts.values.none { it.playerId == player.id })
+        assertTrue(managedAfter.players.any { it.id == player.id })
+        assertFalse(result.freeAgents.any { it.id == player.id })
+        assertNotNull(renewed)
+        assertEquals(userTeam.abbreviation, renewed!!.teamId)
+        assertTrue(renewed.yearsRemaining > 0)
         assertTrue(result.season.teams.flatMap { it.players }.all { result.contracts.containsKey(it.id) })
     }
 }
