@@ -32,6 +32,7 @@ import com.example.utils.AutoSaveManager
 import com.example.utils.CoachFeedbackGenerator
 import com.example.utils.SaveRequestCoordinator
 import com.example.utils.SaveSlotManager
+import com.example.utils.SoundManager
 import com.example.utils.ToastUtils
 import com.google.gson.Gson
 import kotlinx.coroutines.CancellationException
@@ -1024,6 +1025,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     delay(16)
                 }
+
+                if (currentSeason.currentDay >= totalDays) {
+                    playCompletionWhistle()
+                }
             } catch (cancelled: CancellationException) {
                 persistOnExit = false
                 throw cancelled
@@ -1043,6 +1048,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun playCompletionWhistle() {
+        val appContext = getApplication<Application>().applicationContext
+        viewModelScope.launch {
+            val completionSound = SoundManager(appContext)
+            try {
+                completionSound.playWhistle()
+                delay(250)
+            } finally {
+                completionSound.release()
+            }
+        }
+    }
+
     fun simulationConfig(effectsEnabled: Boolean = true): SimulationConfig = SimulationConfig(
         difficulty = difficulty,
         injuriesEnabled = injuriesEnabled,
@@ -1056,7 +1074,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun simulatePlayoffsInteractive(context: Context) {
         val currentSeason = season ?: return
         viewModelScope.launch(Dispatchers.Default) {
-            val result = currentSeason.simulatePlayoffs(context.applicationContext, simulationConfig())
+            val result = currentSeason.simulatePlayoffs(context.applicationContext, simulationConfig(effectsEnabled = false))
             withContext(Dispatchers.Main) {
                 finishPlayoffsWithResult(result)
             }
@@ -1246,6 +1264,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         ))
         gameState = GameState.CHAMPIONSHIP_CELEBRATION
         saveGame()
+        playCompletionWhistle()
     }
 
 }

@@ -9,7 +9,7 @@ class SoundManager(@Suppress("UNUSED_PARAMETER") context: Context) {
     private var toneGenerator: ToneGenerator? = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
 
     fun playWhistle() {
-        toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 120)
+        toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 180)
     }
 
     fun playBasket() {
