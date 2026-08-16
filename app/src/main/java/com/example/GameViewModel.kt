@@ -32,6 +32,7 @@ import com.example.utils.AutoSaveManager
 import com.example.utils.CoachFeedbackGenerator
 import com.example.utils.SaveRequestCoordinator
 import com.example.utils.SaveSlotManager
+import com.example.utils.SoundManager
 import com.example.utils.ToastUtils
 import com.google.gson.Gson
 import kotlinx.coroutines.CancellationException
@@ -1023,6 +1024,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                         saveGame()?.join()
                     }
                     delay(16)
+                }
+
+                if (currentSeason.currentDay >= totalDays) {
+                    viewModelScope.launch {
+                        val completionSound = SoundManager(appContext)
+                        try {
+                            completionSound.playWhistle()
+                            delay(250)
+                        } finally {
+                            completionSound.release()
+                        }
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 persistOnExit = false
