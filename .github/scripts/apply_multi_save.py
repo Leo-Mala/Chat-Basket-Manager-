@@ -1,0 +1,781 @@
+from pathlib import Path
+
+
+def replace_once(path, old, new):
+    p = Path(path)
+    text = p.read_text()
+    if old not in text:
+        raise SystemExit(f"Expected block not found in {path}: {old[:120]!r}")
+    p.write_text(text.replace(old, new, 1))
+
+
+# 1) Save-slot metadata + pending new-career target.
+Path('app/src/main/java/com/example/utils/SaveSlotManager.kt').write_text(r'''package com.example.utils
+
+import android.content.Context
+import com.example.models.Finance
+import com.example.models.NbaTeam
+import com.example.models.Season
+
+data class SaveSlotSummary(
+    val slotId: Int,
+    val occupied: Boolean,
+    val teamName: String? = null,
+    val seasonNumber: Int? = null,
+    val currentYear: Int? = null,
+    val currentDay: Int? = null,
+    val budget: Int? = null,
+    val wins: Int? = null,
+    val losses: Int? = null,
+    val difficulty: Int? = null,
+    val lastSavedAt: Long? = null
+)
+
+/**
+ * Lightweight save-slot registry. The career payload itself remains in Room; this
+ * preference file stores only menu metadata and which physical database is active.
+ * Slot 1 intentionally keeps the legacy basket_manager.db file so existing installs
+ * are adopted without copying or destructive migration.
+ */
+object SaveSlotManager {
+    const val MAX_SLOTS = 3
+
+    private const val PREFS_NAME = "basket_manager_save_slots"
+    private const val KEY_ACTIVE_SLOT = "active_slot"
+    private const val KEY_PENDING_NEW_SLOT = "pending_new_slot"
+
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun requireSlot(slotId: Int): Int {
+        require(slotId in 1..MAX_SLOTS) { "Invalid save slot: $slotId" }
+        return slotId
+    }
+
+    fun getActiveSlot(context: Context): Int =
+        prefs(context).getInt(KEY_ACTIVE_SLOT, 1).coerceIn(1, MAX_SLOTS)
+
+    fun setActiveSlot(context: Context, slotId: Int) {
+        prefs(context).edit().putInt(KEY_ACTIVE_SLOT, requireSlot(slotId)).apply()
+    }
+
+    fun setPendingNewSlot(context: Context, slotId: Int) {
+        prefs(context).edit().putInt(KEY_PENDING_NEW_SLOT, requireSlot(slotId)).apply()
+    }
+
+    fun peekPendingNewSlot(context: Context): Int? {
+        val value = prefs(context).getInt(KEY_PENDING_NEW_SLOT, 0)
+        return value.takeIf { it in 1..MAX_SLOTS }
+    }
+
+    fun clearPendingNewSlot(context: Context) {
+        prefs(context).edit().remove(KEY_PENDING_NEW_SLOT).apply()
+    }
+
+    fun updateSlot(
+        context: Context,
+        slotId: Int,
+        team: NbaTeam,
+        season: Season,
+        finance: Finance?,
+        difficulty: Int
+    ) {
+        requireSlot(slotId)
+        val record = season.standings[team.name]
+        prefs(context).edit()
+            .putBoolean(key(slotId, "occupied"), true)
+            .putString(key(slotId, "team"), team.name)
+            .putInt(key(slotId, "season_number"), season.seasonNumber)
+            .putInt(key(slotId, "year"), season.currentYear)
+            .putInt(key(slotId, "day"), season.currentDay)
+            .putInt(key(slotId, "budget"), finance?.budget ?: 0)
+            .putInt(key(slotId, "wins"), record?.wins ?: 0)
+            .putInt(key(slotId, "losses"), record?.losses ?: 0)
+            .putInt(key(slotId, "difficulty"), difficulty)
+            .putLong(key(slotId, "saved_at"), System.currentTimeMillis())
+            .apply()
+    }
+
+    fun clearSlotMetadata(context: Context, slotId: Int) {
+        requireSlot(slotId)
+        val editor = prefs(context).edit()
+        listOf(
+            "occupied", "team", "season_number", "year", "day", "budget",
+            "wins", "losses", "difficulty", "saved_at"
+        ).forEach { editor.remove(key(slotId, it)) }
+        editor.apply()
+    }
+
+    fun getSlots(context: Context): List<SaveSlotSummary> {
+        val p = prefs(context)
+        return (1..MAX_SLOTS).map { slotId ->
+            val occupied = p.getBoolean(key(slotId, "occupied"), false)
+            SaveSlotSummary(
+                slotId = slotId,
+                occupied = occupied,
+                teamName = p.getString(key(slotId, "team"), null),
+                seasonNumber = p.intOrNull(key(slotId, "season_number"), occupied),
+                currentYear = p.intOrNull(key(slotId, "year"), occupied),
+                currentDay = p.intOrNull(key(slotId, "day"), occupied),
+                budget = p.intOrNull(key(slotId, "budget"), occupied),
+                wins = p.intOrNull(key(slotId, "wins"), occupied),
+                losses = p.intOrNull(key(slotId, "losses"), occupied),
+                difficulty = p.intOrNull(key(slotId, "difficulty"), occupied),
+                lastSavedAt = if (occupied && p.contains(key(slotId, "saved_at"))) p.getLong(key(slotId, "saved_at"), 0L) else null
+            )
+        }
+    }
+
+    private fun key(slotId: Int, field: String) = "slot_${slotId}_$field"
+
+    private fun android.content.SharedPreferences.intOrNull(key: String, occupied: Boolean): Int? =
+        if (occupied && contains(key)) getInt(key, 0) else null
+}
+''')
+
+# 2) One physical Room database per slot; slot 1 preserves the legacy filename.
+replace_once(
+    'app/src/main/java/com/example/data/local/BasketDatabase.kt',
+    'import androidx.sqlite.db.SupportSQLiteDatabase\n',
+    'import androidx.sqlite.db.SupportSQLiteDatabase\nimport com.example.utils.SaveSlotManager\n'
+)
+replace_once(
+    'app/src/main/java/com/example/data/local/BasketDatabase.kt',
+    '        @Volatile private var INSTANCE: BasketDatabase? = null\n',
+    '        private const val LEGACY_DATABASE_NAME = "basket_manager.db"\n        private val INSTANCES = mutableMapOf<String, BasketDatabase>()\n'
+)
+replace_once(
+    'app/src/main/java/com/example/data/local/BasketDatabase.kt',
+    '''        fun getInstance(context: Context): BasketDatabase =
+            INSTANCE ?: synchronized(this) {
+                INSTANCE ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    BasketDatabase::class.java,
+                    "basket_manager.db"
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { INSTANCE = it }
+            }
+''',
+    '''        fun databaseNameForSlot(slotId: Int): String {
+            require(slotId in 1..SaveSlotManager.MAX_SLOTS) { "Invalid save slot: $slotId" }
+            return if (slotId == 1) LEGACY_DATABASE_NAME else "basket_manager_slot_${slotId}.db"
+        }
+
+        fun getInstance(context: Context): BasketDatabase =
+            getInstance(context, SaveSlotManager.getActiveSlot(context.applicationContext))
+
+        fun getInstance(context: Context, slotId: Int): BasketDatabase {
+            val dbName = databaseNameForSlot(slotId)
+            return INSTANCES[dbName] ?: synchronized(this) {
+                INSTANCES[dbName] ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    BasketDatabase::class.java,
+                    dbName
+                ).addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7
+                ).build().also { INSTANCES[dbName] = it }
+            }
+        }
+'''
+)
+
+# 3) GameStateRepository resolves the active database at operation time.
+replace_once(
+    'app/src/main/java/com/example/data/repository/GameStateRepository.kt',
+    'import com.example.utils.PrefsKeys\n',
+    'import com.example.utils.PrefsKeys\nimport com.example.utils.SaveSlotManager\n'
+)
+replace_once(
+    'app/src/main/java/com/example/data/repository/GameStateRepository.kt',
+    '    private val db = database ?: BasketDatabase.getInstance(context.applicationContext)\n',
+    '    private val db: BasketDatabase\n        get() = database ?: BasketDatabase.getInstance(context.applicationContext)\n'
+)
+replace_once(
+    'app/src/main/java/com/example/data/repository/GameStateRepository.kt',
+    '            val legacy = db.gameStateDao().get()?.let { GameStateSnapshot.fromEntity(it) } ?: migrateLegacyPreferences()\n',
+    '            val allowLegacyPreferences = database != null || SaveSlotManager.getActiveSlot(context) == 1\n            val legacy = db.gameStateDao().get()?.let { GameStateSnapshot.fromEntity(it) }\n                ?: if (allowLegacyPreferences) migrateLegacyPreferences() else null\n'
+)
+
+# 4) Autosave updates slot metadata only after the Room transaction succeeds.
+replace_once(
+    'app/src/main/java/com/example/utils/AutoSaveManager.kt',
+    '    private lateinit var repository: GameStateRepository\n',
+    '    private lateinit var repository: GameStateRepository\n    private lateinit var appContext: Context\n'
+)
+replace_once(
+    'app/src/main/java/com/example/utils/AutoSaveManager.kt',
+    '    fun init(context: Context) { repository = GameStateRepository(context.applicationContext) }\n',
+    '''    fun init(context: Context) {
+        appContext = context.applicationContext
+        SaveSlotManager.clearPendingNewSlot(appContext)
+        repository = GameStateRepository(appContext)
+    }
+'''
+)
+replace_once(
+    'app/src/main/java/com/example/utils/AutoSaveManager.kt',
+    '        val r = getRepositoryFromInitialized()\n        r.save(GameStateRepository.GameStateSnapshot(\n',
+    '        val r = getRepositoryFromInitialized()\n        val snapshot = GameStateRepository.GameStateSnapshot(\n'
+)
+replace_once(
+    'app/src/main/java/com/example/utils/AutoSaveManager.kt',
+    '''            latestBoxScoreJson = latestBoxScore?.let(gson::toJson), playoffResultJson = playoffResult?.let(gson::toJson), difficulty = difficulty,
+            injuriesEnabled = injuriesEnabled, autoSubstitutionsEnabled = autoSubstitutionsEnabled
+        ))
+    }
+
+    suspend fun loadGameState(): GameStateRepository.GameStateSnapshot? = getRepositoryFromInitialized().load()
+    suspend fun hasSavedGame(): Boolean = loadGameState() != null
+    suspend fun clearGameState() = saveMutex.withLock { getRepositoryFromInitialized().clear() }
+''',
+    '''            latestBoxScoreJson = latestBoxScore?.let(gson::toJson), playoffResultJson = playoffResult?.let(gson::toJson), difficulty = difficulty,
+            injuriesEnabled = injuriesEnabled, autoSubstitutionsEnabled = autoSubstitutionsEnabled
+        )
+        r.save(snapshot)
+        if (team != null && season != null) {
+            SaveSlotManager.updateSlot(
+                context = appContext,
+                slotId = SaveSlotManager.getActiveSlot(appContext),
+                team = team,
+                season = season,
+                finance = finance,
+                difficulty = difficulty
+            )
+        }
+    }
+
+    suspend fun loadGameState(): GameStateRepository.GameStateSnapshot? = getRepositoryFromInitialized().load()
+    suspend fun hasSavedGame(): Boolean = loadGameState() != null
+    suspend fun clearGameState() = saveMutex.withLock {
+        val slotId = SaveSlotManager.getActiveSlot(appContext)
+        getRepositoryFromInitialized().clear()
+        SaveSlotManager.clearSlotMetadata(appContext, slotId)
+    }
+'''
+)
+
+# 5) Starting a new career switches to the chosen slot only after old saves have drained.
+replace_once(
+    'app/src/main/java/com/example/GameViewModel.kt',
+    'import com.example.utils.SaveRequestCoordinator\n',
+    'import com.example.utils.SaveRequestCoordinator\nimport com.example.utils.SaveSlotManager\n'
+)
+replace_once(
+    'app/src/main/java/com/example/GameViewModel.kt',
+    '''        seasonSimulationJob = null
+        seasonSimulationProgress = null
+        // Invalidate queued snapshots before clearing.
+''',
+    '''        seasonSimulationJob = null
+        seasonSimulationProgress = null
+        val appContext = getApplication<Application>().applicationContext
+        val targetSlot = SaveSlotManager.peekPendingNewSlot(appContext)
+            ?: SaveSlotManager.getActiveSlot(appContext)
+        // Invalidate queued snapshots before clearing.
+'''
+)
+replace_once(
+    'app/src/main/java/com/example/GameViewModel.kt',
+    '            saveMutex.withLock { AutoSaveManager.clearGameState() }\n',
+    '''            saveMutex.withLock {
+                // Do not change the active database until any old-slot save holding this
+                // mutex has completed. This prevents cross-slot writes during a switch.
+                SaveSlotManager.setActiveSlot(appContext, targetSlot)
+                SaveSlotManager.clearPendingNewSlot(appContext)
+                AutoSaveManager.clearGameState()
+            }
+'''
+)
+
+# 6) Main app coordinates slot selection without touching a save until confirmation.
+replace_once(
+    'app/src/main/java/com/example/ui/GameApp.kt',
+    'import com.example.utils.CoachFeedbackGenerator\n',
+    'import com.example.utils.CoachFeedbackGenerator\nimport com.example.utils.SaveSlotManager\n'
+)
+replace_once(
+    'app/src/main/java/com/example/ui/GameApp.kt',
+    '''    var showMainMenu by remember { mutableStateOf(true) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
+    androidx.activity.compose.BackHandler(enabled = !showMainMenu) {
+        showMainMenu = true
+    }
+''',
+    '''    var showMainMenu by remember { mutableStateOf(true) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    val menuScope = rememberCoroutineScope()
+    var saveSlots by remember { mutableStateOf(SaveSlotManager.getSlots(context)) }
+    var activeSlotId by remember { mutableIntStateOf(SaveSlotManager.getActiveSlot(context)) }
+    var pendingContinueSlot by remember { mutableStateOf<Int?>(null) }
+
+    androidx.activity.compose.BackHandler(enabled = !showMainMenu) {
+        if (viewModel.gameState == GameState.SETUP) {
+            SaveSlotManager.clearPendingNewSlot(context)
+        }
+        showMainMenu = true
+    }
+
+    LaunchedEffect(showMainMenu, viewModel.savedGameLoadState) {
+        if (showMainMenu && viewModel.savedGameLoadState == SavedGameLoadState.READY) {
+            val currentTeam = viewModel.managedTeam
+            val currentSeason = viewModel.season
+            if (currentTeam != null && currentSeason != null) {
+                SaveSlotManager.updateSlot(
+                    context = context,
+                    slotId = SaveSlotManager.getActiveSlot(context),
+                    team = currentTeam,
+                    season = currentSeason,
+                    finance = viewModel.finances,
+                    difficulty = viewModel.difficulty
+                )
+            }
+        }
+        activeSlotId = SaveSlotManager.getActiveSlot(context)
+        saveSlots = SaveSlotManager.getSlots(context)
+    }
+
+    LaunchedEffect(viewModel.savedGameLoadState, pendingContinueSlot, activeSlotId) {
+        val pendingSlot = pendingContinueSlot ?: return@LaunchedEffect
+        if (pendingSlot != activeSlotId) return@LaunchedEffect
+        when (viewModel.savedGameLoadState) {
+            SavedGameLoadState.READY -> {
+                pendingContinueSlot = null
+                showMainMenu = false
+            }
+            SavedGameLoadState.EMPTY, SavedGameLoadState.ERROR -> pendingContinueSlot = null
+            SavedGameLoadState.LOADING -> Unit
+        }
+    }
+'''
+)
+
+old_menu = '''                SavedGameLoadState.EMPTY, SavedGameLoadState.READY -> {
+                    val hasSavedGame = viewModel.savedGameLoadState == SavedGameLoadState.READY && viewModel.managedTeam != null
+                    val teamName = viewModel.managedTeam?.name ?: ""
+                    val budget = viewModel.finances?.budget ?: 0
+                    val wins = viewModel.season?.standings?.get(teamName)?.wins ?: 0
+                    val losses = viewModel.season?.standings?.get(teamName)?.losses ?: 0
+
+                    MainMenuScreen(
+                        onContinue = {
+                            val currentSeason = viewModel.season
+                            if (viewModel.managedTeam != null && currentSeason != null) {
+                                viewModel.gameState = CareerResumeRules.resolve(
+                                    currentDay = currentSeason.currentDay,
+                                    hasPlayoffResult = viewModel.playoffResult != null,
+                                    hasDraftClass = viewModel.draftRookies.isNotEmpty()
+                                )
+                            }
+                            showMainMenu = false
+                        },
+                        onNewCareer = {
+                            // Opening setup must never destroy or reuse the loaded career.
+                            // The persisted save is replaced only after startNewGame() is confirmed.
+                            viewModel.gameState = CareerResumeRules.newCareerState()
+                            showMainMenu = false
+                        },
+                        onSettings = {
+                            showSettingsDialog = true
+                        },
+                        hasSavedGame = hasSavedGame,
+                        teamName = teamName,
+                        budget = budget,
+                        wins = wins,
+                        losses = losses
+                    )
+'''
+new_menu = '''                SavedGameLoadState.EMPTY, SavedGameLoadState.READY -> {
+                    val hasSavedGame = saveSlots.any { it.occupied }
+                    val teamName = if (viewModel.savedGameLoadState == SavedGameLoadState.READY) viewModel.managedTeam?.name.orEmpty() else ""
+                    val budget = if (viewModel.savedGameLoadState == SavedGameLoadState.READY) viewModel.finances?.budget ?: 0 else 0
+                    val wins = viewModel.season?.standings?.get(teamName)?.wins ?: 0
+                    val losses = viewModel.season?.standings?.get(teamName)?.losses ?: 0
+
+                    val resumeLoadedCareer: () -> Unit = {
+                        val currentSeason = viewModel.season
+                        if (viewModel.managedTeam != null && currentSeason != null) {
+                            viewModel.gameState = CareerResumeRules.resolve(
+                                currentDay = currentSeason.currentDay,
+                                hasPlayoffResult = viewModel.playoffResult != null,
+                                hasDraftClass = viewModel.draftRookies.isNotEmpty()
+                            )
+                            showMainMenu = false
+                        }
+                    }
+
+                    MainMenuScreen(
+                        onContinue = resumeLoadedCareer,
+                        onNewCareer = {
+                            val targetSlot = saveSlots.firstOrNull { !it.occupied }?.slotId ?: activeSlotId
+                            SaveSlotManager.setPendingNewSlot(context, targetSlot)
+                            viewModel.gameState = CareerResumeRules.newCareerState()
+                            showMainMenu = false
+                        },
+                        onContinueSlot = { slotId ->
+                            if (slotId == activeSlotId &&
+                                viewModel.savedGameLoadState == SavedGameLoadState.READY &&
+                                viewModel.managedTeam != null
+                            ) {
+                                resumeLoadedCareer()
+                            } else {
+                                menuScope.launch {
+                                    if (viewModel.savedGameLoadState == SavedGameLoadState.READY && viewModel.managedTeam != null) {
+                                        viewModel.saveGame()?.join()
+                                    }
+                                    SaveSlotManager.clearPendingNewSlot(context)
+                                    SaveSlotManager.setActiveSlot(context, slotId)
+                                    activeSlotId = slotId
+                                    pendingContinueSlot = slotId
+                                    viewModel.retryLoadSavedGame()
+                                }
+                            }
+                        },
+                        onNewCareerSlot = { slotId ->
+                            SaveSlotManager.setPendingNewSlot(context, slotId)
+                            viewModel.gameState = CareerResumeRules.newCareerState()
+                            showMainMenu = false
+                        },
+                        onSettings = {
+                            showSettingsDialog = true
+                        },
+                        hasSavedGame = hasSavedGame,
+                        teamName = teamName,
+                        budget = budget,
+                        wins = wins,
+                        losses = losses,
+                        saveSlots = saveSlots,
+                        activeSlotId = activeSlotId
+                    )
+'''
+replace_once('app/src/main/java/com/example/ui/GameApp.kt', old_menu, new_menu)
+
+# 7) Main menu exposes slot pickers for Continue and New Career.
+replace_once(
+    'app/src/main/java/com/example/ui/screens/MainMenuScreen.kt',
+    'import com.example.ui.theme.*\n',
+    'import com.example.ui.theme.*\nimport com.example.utils.SaveSlotSummary\n'
+)
+replace_once(
+    'app/src/main/java/com/example/ui/screens/MainMenuScreen.kt',
+    '''    hasSavedGame: Boolean,
+    teamName: String,
+    budget: Int,
+    wins: Int,
+    losses: Int
+) {
+    var selectedFeatureInfo by remember { mutableStateOf<Pair<String, String>?>(null) }
+''',
+    '''    hasSavedGame: Boolean,
+    teamName: String,
+    budget: Int,
+    wins: Int,
+    losses: Int,
+    saveSlots: List<SaveSlotSummary> = emptyList(),
+    activeSlotId: Int = 1,
+    onContinueSlot: ((Int) -> Unit)? = null,
+    onNewCareerSlot: ((Int) -> Unit)? = null
+) {
+    var selectedFeatureInfo by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showContinueSlots by remember { mutableStateOf(false) }
+    var showNewCareerSlots by remember { mutableStateOf(false) }
+'''
+)
+replace_once(
+    'app/src/main/java/com/example/ui/screens/MainMenuScreen.kt',
+    '            if (hasSavedGame) {\n                Card(\n',
+    '            if (teamName.isNotBlank()) {\n                Card(\n'
+)
+replace_once(
+    'app/src/main/java/com/example/ui/screens/MainMenuScreen.kt',
+    '''                        text = "CONTINUAR CARREIRA",
+                        icon = "▶",
+                        onClick = onContinue,
+''',
+    '''                        text = if (saveSlots.count { it.occupied } > 1) "ESCOLHER CARREIRA" else "CONTINUAR CARREIRA",
+                        icon = "▶",
+                        onClick = {
+                            val occupiedSlots = saveSlots.filter { it.occupied }
+                            when {
+                                onContinueSlot == null -> onContinue()
+                                occupiedSlots.size == 1 -> onContinueSlot.invoke(occupiedSlots.first().slotId)
+                                occupiedSlots.isNotEmpty() -> showContinueSlots = true
+                                else -> onContinue()
+                            }
+                        },
+'''
+)
+replace_once(
+    'app/src/main/java/com/example/ui/screens/MainMenuScreen.kt',
+    '''                    text = if (hasSavedGame) "NOVA CARREIRA" else "INICIAR NOVA CARREIRA",
+                    icon = "🏆",
+                    onClick = onNewCareer,
+''',
+    '''                    text = if (hasSavedGame) "NOVA CARREIRA" else "INICIAR NOVA CARREIRA",
+                    icon = "🏆",
+                    onClick = {
+                        if (onNewCareerSlot != null && saveSlots.isNotEmpty()) showNewCareerSlots = true
+                        else onNewCareer()
+                    },
+'''
+)
+replace_once(
+    'app/src/main/java/com/example/ui/screens/MainMenuScreen.kt',
+    '''                    Text(
+                        text = "💾 Salvamento automático local ativo",
+''',
+    '''                    Text(
+                        text = if (saveSlots.isNotEmpty()) "💾 ${saveSlots.count { it.occupied }}/${saveSlots.size} slots ocupados • autosave ativo" else "💾 Salvamento automático local ativo",
+'''
+)
+replace_once(
+    'app/src/main/java/com/example/ui/screens/MainMenuScreen.kt',
+    '''    // Feature Detail Dialog
+    selectedFeatureInfo?.let { (title, description) ->
+''',
+    '''    if (showContinueSlots) {
+        SaveSlotPickerDialog(
+            title = "CONTINUAR CARREIRA",
+            subtitle = "Escolha qual carreira deseja carregar.",
+            slots = saveSlots.filter { it.occupied },
+            activeSlotId = activeSlotId,
+            newCareerMode = false,
+            onDismiss = { showContinueSlots = false },
+            onSelect = { slotId ->
+                showContinueSlots = false
+                onContinueSlot?.invoke(slotId)
+            }
+        )
+    }
+
+    if (showNewCareerSlots) {
+        SaveSlotPickerDialog(
+            title = "NOVA CARREIRA",
+            subtitle = "Escolha um slot. Um slot ocupado só será substituído depois que você confirmar a criação da nova carreira.",
+            slots = saveSlots,
+            activeSlotId = activeSlotId,
+            newCareerMode = true,
+            onDismiss = { showNewCareerSlots = false },
+            onSelect = { slotId ->
+                showNewCareerSlots = false
+                onNewCareerSlot?.invoke(slotId) ?: onNewCareer()
+            }
+        )
+    }
+
+    // Feature Detail Dialog
+    selectedFeatureInfo?.let { (title, description) ->
+'''
+)
+replace_once(
+    'app/src/main/java/com/example/ui/screens/MainMenuScreen.kt',
+    '''                            onClick = {
+                                selectedFeatureInfo = null
+                                onNewCareer()
+                            },
+''',
+    '''                            onClick = {
+                                selectedFeatureInfo = null
+                                if (onNewCareerSlot != null && saveSlots.isNotEmpty()) showNewCareerSlots = true
+                                else onNewCareer()
+                            },
+'''
+)
+
+main_menu = Path('app/src/main/java/com/example/ui/screens/MainMenuScreen.kt')
+text = main_menu.read_text()
+anchor = '\n@Composable\nprivate fun FeatureChip(\n'
+if anchor not in text:
+    raise SystemExit('FeatureChip anchor missing')
+picker = r'''
+
+@Composable
+private fun SaveSlotPickerDialog(
+    title: String,
+    subtitle: String,
+    slots: List<SaveSlotSummary>,
+    activeSlotId: Int,
+    newCareerMode: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CourtDeepSlate),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.5.dp, BasketOrange, RoundedCornerShape(20.dp))
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(title, color = ChampionshipGold, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Text(subtitle, color = TextGray, fontSize = 12.sp, lineHeight = 17.sp)
+
+                slots.forEach { slot ->
+                    val selectedBorder = if (slot.slotId == activeSlotId && slot.occupied) ElectricCyan else CourtBorder
+                    Surface(
+                        onClick = { onSelect(slot.slotId) },
+                        color = CourtLightSlate.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, selectedBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "SLOT ${slot.slotId}",
+                                    color = if (slot.occupied) TextWhite else TextMuted,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    if (slot.occupied) "OCUPADO" else "VAZIO",
+                                    color = if (slot.occupied) SuccessGreen else ElectricCyan,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                )
+                            }
+
+                            if (slot.occupied) {
+                                Text(slot.teamName ?: "Carreira salva", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                val seasonText = buildString {
+                                    append("Temporada ${slot.seasonNumber ?: "-"}")
+                                    slot.currentYear?.let { append(" • $it") }
+                                    slot.currentDay?.let { append(" • Jogo ${(it + 1).coerceAtMost(82)}/82") }
+                                }
+                                Text(seasonText, color = TextGray, fontSize = 11.sp)
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    if (slot.wins != null && slot.losses != null) {
+                                        Text("${slot.wins}V-${slot.losses}D", color = SuccessGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    slot.budget?.let {
+                                        Text("$${String.format("%,d", it).replace(',', '.')}", color = ChampionshipGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                if (newCareerMode) {
+                                    Text(
+                                        "⚠ Será substituído somente ao confirmar a nova carreira.",
+                                        color = BasketOrange,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            } else {
+                                Text("Disponível para uma nova carreira", color = TextGray, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CourtBorder),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("CANCELAR", color = TextGray)
+                }
+            }
+        }
+    }
+}
+'''
+main_menu.write_text(text.replace(anchor, picker + anchor, 1))
+
+# 8) Instrumented isolation test: writes in one slot must never appear in another.
+Path('app/src/androidTest/java/com/example/MultipleSaveSlotsIsolationTest.kt').write_text(r'''package com.example
+
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.example.data.local.BasketDatabase
+import com.example.data.local.GameStateEntity
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class MultipleSaveSlotsIsolationTest {
+
+    @Test
+    fun slotsUseIndependentPhysicalDatabases() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val slot1 = BasketDatabase.getInstance(context, 1)
+        val slot2 = BasketDatabase.getInstance(context, 2)
+        val slot3 = BasketDatabase.getInstance(context, 3)
+
+        assertNotSame(slot1, slot2)
+        assertNotSame(slot2, slot3)
+        assertEquals("basket_manager.db", BasketDatabase.databaseNameForSlot(1))
+        assertEquals("basket_manager_slot_2.db", BasketDatabase.databaseNameForSlot(2))
+        assertEquals("basket_manager_slot_3.db", BasketDatabase.databaseNameForSlot(3))
+
+        slot1.gameStateDao().clear()
+        slot2.gameStateDao().clear()
+        slot3.gameStateDao().clear()
+
+        slot1.gameStateDao().upsert(marker(difficulty = 1))
+        assertEquals(1, slot1.gameStateDao().get()?.difficulty)
+        assertNull(slot2.gameStateDao().get())
+        assertNull(slot3.gameStateDao().get())
+
+        slot2.gameStateDao().upsert(marker(difficulty = 3))
+        assertEquals(1, slot1.gameStateDao().get()?.difficulty)
+        assertEquals(3, slot2.gameStateDao().get()?.difficulty)
+        assertNull(slot3.gameStateDao().get())
+    }
+
+    private fun marker(difficulty: Int) = GameStateEntity(
+        teamJson = null,
+        coachJson = null,
+        financeJson = null,
+        tacticsJson = null,
+        seasonJson = null,
+        historyJson = null,
+        awardsJson = null,
+        startingFiveJson = null,
+        freeAgentsJson = null,
+        draftRookiesJson = null,
+        staffMarketJson = null,
+        notificationsJson = null,
+        teamStaffJson = null,
+        facilitiesJson = null,
+        financeAdvancedJson = null,
+        newsFeedJson = null,
+        latestBoxScoreJson = null,
+        playoffResultJson = null,
+        difficulty = difficulty,
+        injuriesEnabled = true,
+        autoSubstitutionsEnabled = true,
+        updatedAt = System.currentTimeMillis()
+    )
+}
+''')
+
+checks = {
+    'app/src/main/java/com/example/utils/SaveSlotManager.kt': ['MAX_SLOTS = 3', 'pending_new_slot'],
+    'app/src/main/java/com/example/data/local/BasketDatabase.kt': ['basket_manager_slot_${slotId}.db', 'getInstance(context: Context, slotId: Int)'],
+    'app/src/main/java/com/example/ui/screens/MainMenuScreen.kt': ['SaveSlotPickerDialog', 'slots ocupados'],
+    'app/src/main/java/com/example/GameViewModel.kt': ['targetSlot', 'SaveSlotManager.setActiveSlot'],
+}
+for file, needles in checks.items():
+    text = Path(file).read_text()
+    for needle in needles:
+        if needle not in text:
+            raise SystemExit(f'Missing {needle!r} in {file}')
