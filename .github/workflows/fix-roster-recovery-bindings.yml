@@ -1,0 +1,33 @@
+name: Fix roster recovery bindings
+
+on:
+  push:
+    branches:
+      - feature/multiple-save-slots
+    paths:
+      - .github/workflows/fix-roster-recovery-bindings.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/multiple-save-slots
+          fetch-depth: 0
+
+      - name: Apply binding correction
+        run: python3 .github/scripts/fix-roster-recovery-bindings.py
+
+      - name: Commit correction and remove temporary helpers
+        run: |
+          rm .github/scripts/fix-roster-recovery-bindings.py
+          rm .github/workflows/fix-roster-recovery-bindings.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix roster recovery contract bindings"
+          git push origin HEAD:feature/multiple-save-slots
