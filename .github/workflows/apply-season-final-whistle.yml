@@ -1,0 +1,87 @@
+name: Apply season final whistle
+
+on:
+  push:
+    branches:
+      - feature/season-complete-whistle
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/season-complete-whistle
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Patch completion whistle points
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/example/GameViewModel.kt')
+          s = p.read_text()
+
+          old_regular = '''                if (currentSeason.currentDay >= totalDays) {
+                    viewModelScope.launch {
+                        val completionSound = SoundManager(appContext)
+                        try {
+                            completionSound.playWhistle()
+                            delay(250)
+                        } finally {
+                            completionSound.release()
+                        }
+                    }
+                }
+'''
+          new_regular = '''                if (currentSeason.currentDay >= totalDays) {
+                    playCompletionWhistle()
+                }
+'''
+          assert s.count(old_regular) == 1, 'regular-season whistle block not found exactly once'
+          s = s.replace(old_regular, new_regular)
+
+          marker = '    fun simulationConfig(effectsEnabled: Boolean = true): SimulationConfig = SimulationConfig(\n'
+          helper = '''    private fun playCompletionWhistle() {
+        val appContext = getApplication<Application>().applicationContext
+        viewModelScope.launch {
+            val completionSound = SoundManager(appContext)
+            try {
+                completionSound.playWhistle()
+                delay(250)
+            } finally {
+                completionSound.release()
+            }
+        }
+    }
+
+'''
+          assert s.count(marker) == 1, 'simulationConfig marker not found exactly once'
+          s = s.replace(marker, helper + marker)
+
+          old_final = '''        gameState = GameState.CHAMPIONSHIP_CELEBRATION
+        saveGame()
+    }
+
+}'''
+          new_final = '''        gameState = GameState.CHAMPIONSHIP_CELEBRATION
+        saveGame()
+        playCompletionWhistle()
+    }
+
+}'''
+          assert s.count(old_final) == 1, 'playoff completion block not found exactly once'
+          s = s.replace(old_final, new_final)
+
+          p.write_text(s)
+          PY
+      - name: Remove temporary workflow and commit
+        run: |
+          rm .github/workflows/apply-season-final-whistle.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/example/GameViewModel.kt .github/workflows/apply-season-final-whistle.yml
+          git commit -m "Play completion whistle after NBA Finals"
+          git push origin HEAD:feature/season-complete-whistle
