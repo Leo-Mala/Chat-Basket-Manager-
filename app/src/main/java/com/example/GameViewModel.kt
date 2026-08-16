@@ -1027,15 +1027,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 if (currentSeason.currentDay >= totalDays) {
-                    viewModelScope.launch {
-                        val completionSound = SoundManager(appContext)
-                        try {
-                            completionSound.playWhistle()
-                            delay(250)
-                        } finally {
-                            completionSound.release()
-                        }
-                    }
+                    playCompletionWhistle()
                 }
             } catch (cancelled: CancellationException) {
                 persistOnExit = false
@@ -1052,6 +1044,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     saveGame()?.join()
                 }
                 seasonSimulationJob = null
+            }
+        }
+    }
+
+    private fun playCompletionWhistle() {
+        val appContext = getApplication<Application>().applicationContext
+        viewModelScope.launch {
+            val completionSound = SoundManager(appContext)
+            try {
+                completionSound.playWhistle()
+                delay(250)
+            } finally {
+                completionSound.release()
             }
         }
     }
@@ -1259,6 +1264,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         ))
         gameState = GameState.CHAMPIONSHIP_CELEBRATION
         saveGame()
+        playCompletionWhistle()
     }
 
 }
