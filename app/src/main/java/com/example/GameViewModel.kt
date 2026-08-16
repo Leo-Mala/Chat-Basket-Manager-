@@ -208,7 +208,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 team = canonicalTeam,
                 history = loadedHistory,
                 freeAgents = loadedFreeAgents,
-                contracts = rosterRecovery.contracts
+                contracts = loadedContracts
             )
             val effectiveTeam = rosterRecovery.team
             if (rosterRecovery.recoveredPlayerIds.isNotEmpty()) {
@@ -231,7 +231,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     loadedSeason.teams,
                     loadedSeason.standings,
                     loadedCoach.name,
-                    canonicalTeam.name
+                    effectiveTeam.name
                 )
             }
 
@@ -256,7 +256,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 startingFive = syncedStartingFive
                 freeAgents = rosterRecovery.freeAgents
                 draftRookies = loadedDraftRookies
-                contracts = loadedContracts
+                contracts = rosterRecovery.contracts
                 availableStaffMarket = loadedStaffMarket
                 assistantNotifications.clear()
                 assistantNotifications.addAll(loadedNotifications)
