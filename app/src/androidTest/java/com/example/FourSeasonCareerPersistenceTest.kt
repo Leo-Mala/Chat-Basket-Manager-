@@ -8,6 +8,7 @@ import com.example.data.local.BasketDatabase
 import com.example.data.repository.GameStateRepository
 import com.example.domain.contract.ContractManager
 import com.example.domain.season.OffseasonManager
+import com.example.domain.rules.SeasonRules
 import com.example.models.*
 import com.google.gson.GsonBuilder
 import kotlinx.coroutines.runBlocking
@@ -50,6 +51,7 @@ class FourSeasonCareerPersistenceTest {
         }.toMap()
         val history = HistoryManager()
         val coach = Coach(1, "Persistence Coach", 75, 76, 77, 350_000, 3)
+        val originalManagedAges = managed.players.associate { it.id to it.age }
 
         repeat(4) { index ->
             repository.save(snapshot(season, managed, coach, contracts.values.toList(), freeAgents, history))
@@ -90,6 +92,15 @@ class FourSeasonCareerPersistenceTest {
                 contracts = transition.contracts
                 freeAgents = transition.freeAgents
                 managed = requireNotNull(season.teams.find { it.name == managed.name })
+
+                val completedTransitions = index + 1
+                val expectedSurvivors = originalManagedAges
+                    .filterValues { initialAge -> initialAge + completedTransitions <= SeasonRules.MAX_PLAYER_AGE }
+                    .keys
+                assertTrue(
+                    "managed roster lost non-retired players after contract rollover",
+                    expectedSurvivors.all { id -> managed.players.any { it.id == id } }
+                )
             }
         }
     }
