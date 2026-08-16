@@ -111,7 +111,7 @@ class AiRosterManagerTest {
     }
 
     @Test
-    fun userExpiredStarRemainsAvailableInsteadOfBeingAutoSignedByCpu() {
+    fun userExpiredStarIsRenewedAndCannotBeAutoSignedByCpu() {
         val teams = NbaDataGenerator.getAllTeams()
         val user = teams[0]
         val star = user.players.maxByOrNull { it.overall }!!
@@ -135,10 +135,14 @@ class AiRosterManagerTest {
         )
 
         val result = OffseasonManager(contractManager).advance(season, contracts, emptyList())
+        val managedAfter = result.season.teams.first { it.name == user.name }
+        val renewedContract = result.contracts[star.id]
 
-        assertTrue(result.freeAgents.any { it.id == star.id })
-        assertFalse(result.season.teams.flatMap { it.players }.any { it.id == star.id })
-        assertFalse(result.contracts.containsKey(star.id))
+        assertTrue(managedAfter.players.any { it.id == star.id })
+        assertFalse(result.freeAgents.any { it.id == star.id })
+        assertNotNull(renewedContract)
+        assertEquals(user.abbreviation, renewedContract!!.teamId)
+        assertTrue(renewedContract.yearsRemaining > 0)
     }
 
     private fun player(id: Int, position: String, overall: Int, age: Int): Player =
