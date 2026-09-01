@@ -103,6 +103,9 @@ class LegacyManagedTeamMigrationTest {
         // Reproduce an already-normalized save created before managed-team identity was
         // hardened: all relational data is valid, but seasons.userTeamId is missing.
         db.seasonDao().upsert(persisted.copy(userTeamId = null))
+        // Remove the stronger starting-five ownership evidence to exercise the real
+        // slot-metadata fallback instead of letting the repository infer the team there.
+        db.playerDao().upsertAll(db.playerDao().all().map { it.copy(startingFive = false) })
         SaveSlotManager.setActiveSlot(context, 3)
         SaveSlotManager.updateSlot(context, 3, managed, season, finance, difficulty = 1)
 
