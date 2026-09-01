@@ -74,6 +74,11 @@ abstract class BasketDatabase : RoomDatabase() {
                 super.onCreate(db)
                 ensureSupplementalPerformanceIndexes(db)
             }
+
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                ensureSupplementalPerformanceIndexes(db)
+            }
         }
 
         internal val MIGRATION_1_2 = object : Migration(1, 2) {
