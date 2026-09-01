@@ -161,7 +161,7 @@ class GameStateRepository(
             db.gameDao().deleteOutsideSeason(sid)
             db.standingDao().deleteOutsideSeason(sid)
             db.seasonDao().deleteOutsideSeason(sid)
-            db.seasonDao().upsert(s.toEntity())
+            db.seasonDao().upsert(s.toEntity(managedTeam))
 
             // A save is an authoritative snapshot of the current season. Remove any
             // previously persisted rows for this season before rebuilding them so a
@@ -384,7 +384,23 @@ class GameStateRepository(
     private fun FinanceEntity.toModel(sponsors: List<SponsorEntity>, expenses: List<ExpenseEntity>, gson: Gson) = Finance(budget, sponsors.map { Sponsor(it.name, it.amountPerYear, it.yearsRemaining) }, expenses.map { Expense(it.description, it.amount, it.date) }.toMutableList(), coachSalaryPaid, arenaSeatsLevel, medicalStaffLevel, scoutingLevel)
     private fun Tactics.toEntity() = TacticsEntity(1, style.name, pace, defensivePressure, offensiveRebound)
     private fun TacticsEntity.toModel() = Tactics(PlayStyle.valueOf(style), pace, defensivePressure, offensiveRebound)
-    private fun Season.toEntity() = SeasonEntity(seasonNumber, currentDay, gamesPlayed, seasonNumber, currentMonth, currentYear, userTeamName?.let { n -> teams.firstOrNull { it.name == n }?.let(::teamId) }, nextPlayerId)
+    private fun Season.toEntity(managedTeamFallback: NbaTeam? = null): SeasonEntity {
+        val persistedManagedTeam = userTeamName
+            ?.let { name -> teams.firstOrNull { it.name == name } }
+            ?: managedTeamFallback?.let { fallback ->
+                teams.firstOrNull { teamId(it) == teamId(fallback) || it.name == fallback.name } ?: fallback
+            }
+        return SeasonEntity(
+            seasonNumber,
+            currentDay,
+            gamesPlayed,
+            seasonNumber,
+            currentMonth,
+            currentYear,
+            persistedManagedTeam?.let(::teamId),
+            nextPlayerId
+        )
+    }
     private fun GameSimulator.PlayerStats.toEntity(gameId: String, playerId: Int, teamId: String) =
         PlayerGameStatEntity(gameId, playerId, teamId, points, rebounds, assists, steals, blocks, turnovers, plusMinus)
     private fun PlayerGameStatEntity.toModel() = GameSimulator.PlayerStats(points, rebounds, assists, steals, blocks, turnovers, plusMinus)
