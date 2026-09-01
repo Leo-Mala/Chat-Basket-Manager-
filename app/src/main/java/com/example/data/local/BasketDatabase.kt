@@ -56,6 +56,26 @@ abstract class BasketDatabase : RoomDatabase() {
         private const val LEGACY_DATABASE_NAME = "basket_manager.db"
         private val INSTANCES = mutableMapOf<String, BasketDatabase>()
 
+        /**
+         * These indexes predate the current Room entity declarations: migration 3->4
+         * creates them for upgraded installs, but Room's fresh v7 schema does not.
+         * Keep them as supplemental SQLite indexes so new and migrated careers have
+         * the same query plan without changing the persisted Room schema identity.
+         */
+        internal fun ensureSupplementalPerformanceIndexes(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_player_game_stats_playerId ON player_game_stats(playerId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_player_game_stats_gameId ON player_game_stats(gameId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_game_injuries_playerId ON game_injuries(playerId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_game_injuries_gameId ON game_injuries(gameId)")
+        }
+
+        private val FRESH_DATABASE_INDEX_CALLBACK = object : RoomDatabase.Callback() {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                super.onCreate(db)
+                ensureSupplementalPerformanceIndexes(db)
+            }
+        }
+
         internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""CREATE TABLE IF NOT EXISTS teams (
@@ -112,10 +132,7 @@ abstract class BasketDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_games_seasonId ON games(seasonId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_games_homeTeamId ON games(homeTeamId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_games_awayTeamId ON games(awayTeamId)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_player_game_stats_playerId ON player_game_stats(playerId)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_player_game_stats_gameId ON player_game_stats(gameId)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_game_injuries_playerId ON game_injuries(playerId)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_game_injuries_gameId ON game_injuries(gameId)")
+                ensureSupplementalPerformanceIndexes(db)
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_contracts_teamId ON contracts(teamId)")
             }
         }
@@ -126,7 +143,6 @@ abstract class BasketDatabase : RoomDatabase() {
                 db.execSQL("UPDATE seasons SET nextPlayerId = COALESCE((SELECT MAX(id) + 1 FROM players), 1) WHERE nextPlayerId <= 1")
             }
         }
-
 
         internal val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -169,19 +185,24 @@ abstract class BasketDatabase : RoomDatabase() {
         fun getInstance(context: Context, slotId: Int): BasketDatabase {
             val dbName = databaseNameForSlot(slotId)
             return INSTANCES[dbName] ?: synchronized(this) {
-                INSTANCES[dbName] ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    BasketDatabase::class.java,
-                    dbName
-                ).addMigrations(
-                    MIGRATION_1_2,
-                    MIGRATION_2_3,
-                    MIGRATION_3_4,
-                    MIGRATION_4_5,
-                    MIGRATION_5_6,
-                    MIGRATION_6_7
-                ).build().also { INSTANCES[dbName] = it }
+                INSTANCES[dbName] ?: createDatabase(context.applicationContext, dbName)
+                    .also { INSTANCES[dbName] = it }
             }
         }
+
+        internal fun createDatabase(context: Context, dbName: String): BasketDatabase =
+            Room.databaseBuilder(
+                context.applicationContext,
+                BasketDatabase::class.java,
+                dbName
+            ).addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+                MIGRATION_6_7
+            ).addCallback(FRESH_DATABASE_INDEX_CALLBACK)
+                .build()
     }
 }
