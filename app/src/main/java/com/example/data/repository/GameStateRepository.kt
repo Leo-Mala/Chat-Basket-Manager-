@@ -288,7 +288,7 @@ class GameStateRepository(
         val games = currentSeasonId?.let { db.gameDao().forSeason(it) }.orEmpty()
         val stats = currentSeasonId?.let { db.playerGameStatDao().forSeason(it) }.orEmpty().groupBy { it.gameId }
         val injuries = currentSeasonId?.let { db.gameInjuryDao().forSeason(it) }.orEmpty().groupBy { it.gameId }
-        val award = db.awardDao().all().maxByOrNull { it.seasonId }
+        val award = currentSeasonId?.let { seasonId -> db.awardDao().all().firstOrNull { it.seasonId == seasonId } }
         val contracts = db.contractDao().all().map { it.toModel() }
         val historyRows = db.seasonHistoryDao().all()
         val historyWins = db.seasonHistoryTeamWinDao().all().groupBy { it.seasonNumber }
