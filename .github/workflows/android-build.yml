@@ -4,13 +4,17 @@ on:
   push:
     branches:
       - main
-      - master
-      - fix/android-build-validation
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-and-build:
@@ -168,6 +172,7 @@ jobs:
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
+          retention-days: 14
 
       - name: Upload test reports
         if: always()
@@ -178,3 +183,4 @@ jobs:
             **/build/test-results/**
             **/build/reports/**
           if-no-files-found: ignore
+          retention-days: 14
