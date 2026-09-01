@@ -5,6 +5,7 @@ import com.example.data.repository.GameStateRepository
 import com.example.domain.rules.SavedGameStartupRules
 import com.example.models.*
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
@@ -82,8 +83,6 @@ object DataExporter {
         }
         val validTactics: (Any) -> Boolean = { value ->
             value is Tactics && runCatching {
-                // Gson bypasses Kotlin constructor defaults and can leave style null for `{}`.
-                // Touch the reference used by SimulationRules before accepting an import.
                 value.style.name
                 true
             }.getOrDefault(false)
@@ -163,6 +162,10 @@ object DataExporter {
             validPayload(snapshot.coachJson, Coach::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.financeJson, Finance::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.tacticsJson, Tactics::class.java, JsonToken.BEGIN_OBJECT, validTactics) &&
+            hasRequiredObjectFields(
+                snapshot.tacticsJson,
+                setOf("style", "pace", "defensivePressure", "offensiveRebound")
+            ) &&
             validPayload(snapshot.seasonJson, Season::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.historyJson, HistoryManager::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.awardsJson, Awards::class.java, JsonToken.BEGIN_OBJECT) &&
@@ -188,6 +191,17 @@ object DataExporter {
                 validMatchBoxScore
             ) &&
             validPayload(snapshot.playoffResultJson, Season.PlayoffResult::class.java, JsonToken.BEGIN_OBJECT)
+    }
+
+    private fun hasRequiredObjectFields(payload: String?, requiredFields: Set<String>): Boolean {
+        if (payload == null) return true
+        return runCatching {
+            val objectPayload = gson.fromJson(payload, JsonObject::class.java)
+                ?: error("JSON payload did not decode to an object")
+            requiredFields.all { field ->
+                objectPayload.has(field) && !objectPayload.get(field).isJsonNull
+            }
+        }.getOrDefault(false)
     }
 
     private fun validPayload(
