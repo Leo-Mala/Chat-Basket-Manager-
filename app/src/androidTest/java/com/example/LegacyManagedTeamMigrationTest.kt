@@ -81,6 +81,40 @@ class LegacyManagedTeamMigrationTest {
     }
 
     @Test
+    fun normalizedSnapshotWithoutManagedTeamIdRecoversFromStartingFiveOwnership() = runBlocking {
+        val teams = NbaDataGenerator.getAllTeams()
+        val managed = teams[7]
+        val finance = Finance(80_000_000)
+        val season = Season(
+            teams = teams,
+            currentDay = 21,
+            gamesPlayed = 21,
+            seasonNumber = 3,
+            nextPlayerId = teams.flatMap { it.players }.maxOf { it.id } + 1
+        ).apply {
+            userTeamName = managed.name
+        }
+
+        repository.save(snapshotFor(managed, season, finance))
+        val persisted = db.seasonDao().current()
+        assertNotNull(persisted)
+        db.seasonDao().upsert(persisted!!.copy(userTeamId = null))
+
+        // Prove the normalized Room evidence is sufficient by removing slot metadata.
+        SaveSlotManager.setActiveSlot(context, 3)
+        SaveSlotManager.clearSlotMetadata(context, 3)
+
+        val recovered = repository.load()
+        assertNotNull(recovered)
+        val recoveredTeam = gson.fromJson(recovered!!.teamJson, NbaTeam::class.java)
+        val recoveredSeason = gson.fromJson(recovered.seasonJson, Season::class.java)
+
+        assertEquals(managed.name, recoveredTeam.name)
+        assertEquals(managed.name, recoveredSeason.userTeamName)
+        assertEquals(managed.abbreviation, db.seasonDao().current()?.userTeamId)
+    }
+
+    @Test
     fun normalizedSnapshotWithoutManagedTeamIdRecoversFromActiveSlotMetadata() = runBlocking {
         val teams = NbaDataGenerator.getAllTeams()
         val managed = teams[8]
