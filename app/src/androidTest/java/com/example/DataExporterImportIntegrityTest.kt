@@ -51,12 +51,13 @@ class DataExporterImportIntegrityTest {
 
     @Test
     fun validImportUpdatesActiveSlotMetadata() = runBlocking {
+        val importedBoxScore = validBoxScoreJson("imported-box-score")
         val snapshot = snapshot(
             seasonNumber = 4,
             currentDay = 23,
             budget = 145_000_000,
             difficulty = 3,
-            latestBoxScoreJson = "{\"marker\":\"imported-box-score\"}"
+            latestBoxScoreJson = importedBoxScore
         )
         val file = writeSnapshot("valid-import.json", snapshot)
 
@@ -72,17 +73,18 @@ class DataExporterImportIntegrityTest {
 
         val loaded = repository.load()
         assertNotNull(loaded)
-        assertEquals("{\"marker\":\"imported-box-score\"}", loaded!!.latestBoxScoreJson)
+        assertEquals(importedBoxScore, loaded!!.latestBoxScoreJson)
     }
 
     @Test
     fun incompleteImportIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        val existingBoxScore = validBoxScoreJson("existing-box-score")
         val existing = snapshot(
             seasonNumber = 2,
             currentDay = 11,
             budget = 120_000_000,
             difficulty = 2,
-            latestBoxScoreJson = "{\"marker\":\"existing-box-score\"}"
+            latestBoxScoreJson = existingBoxScore
         )
         repository.save(existing)
         val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
@@ -93,7 +95,7 @@ class DataExporterImportIntegrityTest {
         val incomplete = existing.copy(
             teamJson = null,
             seasonJson = null,
-            latestBoxScoreJson = "{\"marker\":\"invalid-replacement\"}"
+            latestBoxScoreJson = validBoxScoreJson("invalid-replacement")
         )
         val file = writeSnapshot("incomplete-import.json", incomplete)
 
@@ -104,7 +106,7 @@ class DataExporterImportIntegrityTest {
         val loadedSeason = gson.fromJson(loaded!!.seasonJson, Season::class.java)
         assertEquals(2, loadedSeason.seasonNumber)
         assertEquals(11, loadedSeason.currentDay)
-        assertEquals("{\"marker\":\"existing-box-score\"}", loaded.latestBoxScoreJson)
+        assertEquals(existingBoxScore, loaded.latestBoxScoreJson)
 
         val slot = SaveSlotManager.getSlots(context).single { it.slotId == testSlot }
         assertTrue(slot.occupied)
@@ -115,12 +117,13 @@ class DataExporterImportIntegrityTest {
 
     @Test
     fun detachedManagedTeamImportIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        val existingBoxScore = validBoxScoreJson("existing-box-score")
         val existing = snapshot(
             seasonNumber = 2,
             currentDay = 11,
             budget = 120_000_000,
             difficulty = 2,
-            latestBoxScoreJson = "{\"marker\":\"existing-box-score\"}"
+            latestBoxScoreJson = existingBoxScore
         )
         repository.save(existing)
         val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
@@ -135,7 +138,7 @@ class DataExporterImportIntegrityTest {
                 teams = teams.filterNot { it.name == importedTeam.name }
                 userTeamName = importedTeam.name
             }),
-            latestBoxScoreJson = "{\"marker\":\"invalid-detached-team\"}"
+            latestBoxScoreJson = validBoxScoreJson("invalid-detached-team")
         )
         val file = writeSnapshot("detached-team-import.json", inconsistent)
 
@@ -144,7 +147,7 @@ class DataExporterImportIntegrityTest {
         val loaded = repository.load()
         assertNotNull(loaded)
         assertEquals(existing.teamJson, loaded!!.teamJson)
-        assertEquals("{\"marker\":\"existing-box-score\"}", loaded.latestBoxScoreJson)
+        assertEquals(existingBoxScore, loaded.latestBoxScoreJson)
 
         val slot = SaveSlotManager.getSlots(context).single { it.slotId == testSlot }
         assertTrue(slot.occupied)
@@ -156,12 +159,13 @@ class DataExporterImportIntegrityTest {
 
     @Test
     fun malformedSecondaryJsonIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        val existingBoxScore = validBoxScoreJson("existing-box-score")
         val existing = snapshot(
             seasonNumber = 2,
             currentDay = 11,
             budget = 120_000_000,
             difficulty = 2,
-            latestBoxScoreJson = "{\"marker\":\"existing-box-score\"}"
+            latestBoxScoreJson = existingBoxScore
         )
         repository.save(existing)
         val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
@@ -171,7 +175,7 @@ class DataExporterImportIntegrityTest {
 
         val malformed = existing.copy(
             newsFeedJson = "{",
-            latestBoxScoreJson = "{\"marker\":\"invalid-replacement\"}"
+            latestBoxScoreJson = validBoxScoreJson("invalid-replacement")
         )
         val file = writeSnapshot("malformed-secondary-import.json", malformed)
 
@@ -181,7 +185,7 @@ class DataExporterImportIntegrityTest {
         assertNotNull(loaded)
         assertEquals(existing.teamJson, loaded!!.teamJson)
         assertEquals(existing.newsFeedJson, loaded.newsFeedJson)
-        assertEquals("{\"marker\":\"existing-box-score\"}", loaded.latestBoxScoreJson)
+        assertEquals(existingBoxScore, loaded.latestBoxScoreJson)
 
         val slot = SaveSlotManager.getSlots(context).single { it.slotId == testSlot }
         assertTrue(slot.occupied)
@@ -193,12 +197,13 @@ class DataExporterImportIntegrityTest {
 
     @Test
     fun wrongShapedSecondaryJsonIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        val existingBoxScore = validBoxScoreJson("existing-box-score")
         val existing = snapshot(
             seasonNumber = 2,
             currentDay = 11,
             budget = 120_000_000,
             difficulty = 2,
-            latestBoxScoreJson = "{\"marker\":\"existing-box-score\"}"
+            latestBoxScoreJson = existingBoxScore
         )
         repository.save(existing)
         val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
@@ -208,7 +213,7 @@ class DataExporterImportIntegrityTest {
 
         val wrongShaped = existing.copy(
             newsFeedJson = "\"corrupt\"",
-            latestBoxScoreJson = "{\"marker\":\"invalid-replacement\"}"
+            latestBoxScoreJson = validBoxScoreJson("invalid-replacement")
         )
         val file = writeSnapshot("wrong-shaped-secondary-import.json", wrongShaped)
 
@@ -218,7 +223,41 @@ class DataExporterImportIntegrityTest {
         assertNotNull(loaded)
         assertEquals(existing.teamJson, loaded!!.teamJson)
         assertEquals(existing.newsFeedJson, loaded.newsFeedJson)
-        assertEquals("{\"marker\":\"existing-box-score\"}", loaded.latestBoxScoreJson)
+        assertEquals(existingBoxScore, loaded.latestBoxScoreJson)
+
+        val slot = SaveSlotManager.getSlots(context).single { it.slotId == testSlot }
+        assertTrue(slot.occupied)
+        assertEquals(existingTeam.name, slot.teamName)
+        assertEquals(2, slot.seasonNumber)
+        assertEquals(11, slot.currentDay)
+        assertEquals(120_000_000, slot.budget)
+    }
+
+    @Test
+    fun incompleteBoxScoreIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        val existingBoxScore = validBoxScoreJson("existing-box-score")
+        val existing = snapshot(
+            seasonNumber = 2,
+            currentDay = 11,
+            budget = 120_000_000,
+            difficulty = 2,
+            latestBoxScoreJson = existingBoxScore
+        )
+        repository.save(existing)
+        val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
+        val existingSeason = gson.fromJson(existing.seasonJson, Season::class.java)
+        val existingFinance = gson.fromJson(existing.financeJson, Finance::class.java)
+        SaveSlotManager.updateSlot(context, testSlot, existingTeam, existingSeason, existingFinance, existing.difficulty)
+
+        val incompleteBoxScore = existing.copy(latestBoxScoreJson = "{}")
+        val file = writeSnapshot("incomplete-box-score-import.json", incompleteBoxScore)
+
+        assertFalse(DataExporter.importGame(context, file.absolutePath))
+
+        val loaded = repository.load()
+        assertNotNull(loaded)
+        assertEquals(existing.teamJson, loaded!!.teamJson)
+        assertEquals(existingBoxScore, loaded.latestBoxScoreJson)
 
         val slot = SaveSlotManager.getSlots(context).single { it.slotId == testSlot }
         assertTrue(slot.occupied)
@@ -270,6 +309,53 @@ class DataExporterImportIntegrityTest {
             autoSubstitutionsEnabled = true
         )
     }
+
+    private fun validBoxScoreJson(matchId: String): String = gson.toJson(
+        MatchBoxScore(
+            matchId = matchId,
+            dateString = "2026-09-01",
+            homeTeamName = "Home",
+            awayTeamName = "Away",
+            homeScore = 100,
+            awayScore = 90,
+            homeQuarterScores = listOf(25, 25, 25, 25),
+            awayQuarterScores = listOf(20, 25, 20, 25),
+            homePlayers = emptyList(),
+            awayPlayers = emptyList(),
+            homeTeamTotals = TeamBoxScore(
+                teamName = "Home",
+                points = 100,
+                rebounds = 0,
+                assists = 0,
+                steals = 0,
+                blocks = 0,
+                turnovers = 0,
+                fouls = 0,
+                fgMade = 0,
+                fgAttempted = 0,
+                threeMade = 0,
+                threeAttempted = 0,
+                ftMade = 0,
+                ftAttempted = 0
+            ),
+            awayTeamTotals = TeamBoxScore(
+                teamName = "Away",
+                points = 90,
+                rebounds = 0,
+                assists = 0,
+                steals = 0,
+                blocks = 0,
+                turnovers = 0,
+                fouls = 0,
+                fgMade = 0,
+                fgAttempted = 0,
+                threeMade = 0,
+                threeAttempted = 0,
+                ftMade = 0,
+                ftAttempted = 0
+            )
+        )
+    )
 
     private fun writeSnapshot(name: String, snapshot: GameStateRepository.GameStateSnapshot): File =
         File(context.cacheDir, name).apply { writeText(exportGson.toJson(snapshot)) }
