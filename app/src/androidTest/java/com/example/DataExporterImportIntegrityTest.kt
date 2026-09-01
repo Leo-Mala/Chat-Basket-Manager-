@@ -191,6 +191,43 @@ class DataExporterImportIntegrityTest {
         assertEquals(120_000_000, slot.budget)
     }
 
+    @Test
+    fun wrongShapedSecondaryJsonIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        val existing = snapshot(
+            seasonNumber = 2,
+            currentDay = 11,
+            budget = 120_000_000,
+            difficulty = 2,
+            latestBoxScoreJson = "{\"marker\":\"existing-box-score\"}"
+        )
+        repository.save(existing)
+        val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
+        val existingSeason = gson.fromJson(existing.seasonJson, Season::class.java)
+        val existingFinance = gson.fromJson(existing.financeJson, Finance::class.java)
+        SaveSlotManager.updateSlot(context, testSlot, existingTeam, existingSeason, existingFinance, existing.difficulty)
+
+        val wrongShaped = existing.copy(
+            newsFeedJson = "\"corrupt\"",
+            latestBoxScoreJson = "{\"marker\":\"invalid-replacement\"}"
+        )
+        val file = writeSnapshot("wrong-shaped-secondary-import.json", wrongShaped)
+
+        assertFalse(DataExporter.importGame(context, file.absolutePath))
+
+        val loaded = repository.load()
+        assertNotNull(loaded)
+        assertEquals(existing.teamJson, loaded!!.teamJson)
+        assertEquals(existing.newsFeedJson, loaded.newsFeedJson)
+        assertEquals("{\"marker\":\"existing-box-score\"}", loaded.latestBoxScoreJson)
+
+        val slot = SaveSlotManager.getSlots(context).single { it.slotId == testSlot }
+        assertTrue(slot.occupied)
+        assertEquals(existingTeam.name, slot.teamName)
+        assertEquals(2, slot.seasonNumber)
+        assertEquals(11, slot.currentDay)
+        assertEquals(120_000_000, slot.budget)
+    }
+
     private fun snapshot(
         seasonNumber: Int,
         currentDay: Int,
