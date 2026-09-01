@@ -268,10 +268,10 @@ class GameStateRepository(
             "Incomplete normalized save: current standings do not cover every team"
         }
 
-        val rosterIds = activePlayers.filter { it.teamId != null }.map { it.id }.toSet()
-        val contractIds = db.contractDao().all().map { it.playerId }.toSet()
-        check(rosterIds.all { it in contractIds }) {
-            "Incomplete normalized save: roster player is missing a contract"
+        val rosterPlayers = activePlayers.filter { it.teamId != null }
+        val contractsByPlayer = db.contractDao().all().associateBy { it.playerId }
+        check(rosterPlayers.all { player -> contractsByPlayer[player.id]?.teamId == player.teamId }) {
+            "Incomplete normalized save: roster contract ownership mismatch"
         }
     }
 
@@ -415,7 +415,7 @@ class GameStateRepository(
     private fun teamId(team: NbaTeam) = team.abbreviation.ifBlank { team.name.lowercase().replace("[^a-z0-9]".toRegex(), "_") }
     private fun PlayerEntity.toModel() = Player(id, name, position, overall, shooting, defense, rebound, passing, athleticism, age, xp, trainings, injured, injuryDays, careerPoints, careerRebounds, careerAssists, careerSteals, careerBlocks, careerGames, championships, mvps, seasonPoints, seasonRebounds, seasonAssists, seasonSteals, seasonBlocks, seasonGames)
     private fun Player.toEntity(teamId: String?, poolType: String, active: Boolean, starting: Boolean) = PlayerEntity(id, teamId, poolType, active, starting, name, position, overall, shooting, defense, rebound, passing, athleticism, age, xp, trainings, injured, injuryDays, careerPoints, careerRebounds, careerAssists, careerSteals, careerBlocks, careerGames, championships, mvps, seasonPoints, seasonRebounds, seasonAssists, seasonSteals, seasonBlocks, seasonGames)
-    private fun NbaTeam.toEntity() = TeamEntity(teamId(this), name, city, abbreviation, conference, arena.name, arena.city, arena.capacity, arena.opened)
+    private fun NbaTeam.toEntity() = TeamEntity(teamId(this), name, city, abbreviation, conference, Arena(arenaName, arenaCity, arenaCapacity, arenaOpened), players)
     private fun TeamEntity.toModel(players: List<Player>) = NbaTeam(name, city, abbreviation, conference, Arena(arenaName, arenaCity, arenaCapacity, arenaOpened), players)
     private fun Coach.toEntity() = CoachEntity(id, name, offensiveSkill, defensiveSkill, motivationalSkill, salary, contractYears)
     private fun CoachEntity.toModel() = Coach(id, name, offensiveSkill, defensiveSkill, motivationalSkill, salary, contractYears)
