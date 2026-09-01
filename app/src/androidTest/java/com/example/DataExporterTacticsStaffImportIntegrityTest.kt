@@ -65,6 +65,38 @@ class DataExporterTacticsStaffImportIntegrityTest {
         )
     }
 
+    @Test
+    fun incompleteTeamStaffIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        assertRejectedAtomically(
+            fileName = "incomplete-team-staff-import.json",
+            mutate = { it.copy(teamStaffJson = "{\"assistants\":null}") }
+        )
+    }
+
+    @Test
+    fun incompleteFacilitiesAreRejectedBeforeMutatingExistingCareer() = runBlocking {
+        assertRejectedAtomically(
+            fileName = "incomplete-facilities-import.json",
+            mutate = { it.copy(facilitiesJson = "{\"arena\":null}") }
+        )
+    }
+
+    @Test
+    fun incompleteAdvancedFinanceIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        assertRejectedAtomically(
+            fileName = "incomplete-advanced-finance-import.json",
+            mutate = { it.copy(financeAdvancedJson = "{\"revenues\":null}") }
+        )
+    }
+
+    @Test
+    fun incompletePlayoffResultIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        assertRejectedAtomically(
+            fileName = "incomplete-playoff-result-import.json",
+            mutate = { it.copy(playoffResultJson = "{}") }
+        )
+    }
+
     private suspend fun assertRejectedAtomically(
         fileName: String,
         mutate: (GameStateRepository.GameStateSnapshot) -> GameStateRepository.GameStateSnapshot
@@ -91,6 +123,10 @@ class DataExporterTacticsStaffImportIntegrityTest {
         assertEquals(existing.teamJson, loaded!!.teamJson)
         assertEquals(existing.tacticsJson, loaded.tacticsJson)
         assertEquals(existing.staffMarketJson, loaded.staffMarketJson)
+        assertEquals(existing.teamStaffJson, loaded.teamStaffJson)
+        assertEquals(existing.facilitiesJson, loaded.facilitiesJson)
+        assertEquals(existing.financeAdvancedJson, loaded.financeAdvancedJson)
+        assertEquals(existing.playoffResultJson, loaded.playoffResultJson)
 
         val slot = SaveSlotManager.getSlots(context).single { it.slotId == testSlot }
         assertTrue(slot.occupied)
