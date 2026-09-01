@@ -58,6 +58,8 @@ class GameStateRepository(
             val freeAgents = snapshot.freeAgentsJson?.let { parsePlayers(it) }.orEmpty()
             val draftRookies = snapshot.draftRookiesJson?.let { parsePlayers(it) }.orEmpty()
             val contracts = snapshot.contractsJson?.let { parseContracts(it) }.orEmpty()
+            val previousSeasonNumber = db.seasonDao().current()?.seasonNumber
+            val seasonChanged = previousSeasonNumber != null && season != null && previousSeasonNumber != season.seasonNumber
 
             if (team != null || season != null) persistCore(team, season, coach, finance, tactics, history, awards, startingFive, freeAgents, draftRookies, contracts)
 
@@ -73,6 +75,7 @@ class GameStateRepository(
                 startingFiveJson = null,
                 freeAgentsJson = null,
                 draftRookiesJson = null,
+                latestBoxScoreJson = if (seasonChanged) null else snapshot.latestBoxScoreJson,
                 schemaVersion = 2
             ).toEntity())
         }
