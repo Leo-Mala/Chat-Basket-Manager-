@@ -16,7 +16,9 @@ import kotlinx.coroutines.runBlocking
 
 /** Import/export uses the Room-backed save instead of SharedPreferences. */
 object DataExporter {
-    private val gson = Gson()
+    // Keep import validation aligned with the runtime save/load codec. In particular,
+    // StaffMember is abstract and requires StaffMemberJsonAdapter.
+    private val gson: Gson = AutoSaveManager.gson
 
     fun exportData(context: Context, data: Map<String, Any>): String {
         val json = gson.toJson(data)
@@ -75,6 +77,19 @@ object DataExporter {
         val listStaffType = object : TypeToken<List<StaffMember>>() {}.type
         val listNotificationType = object : TypeToken<List<AssistantCoachNotification>>() {}.type
         val listNewsType = object : TypeToken<List<News>>() {}.type
+        val nonNullList: (Any) -> Boolean = { value ->
+            value is List<*> && value.all { it != null }
+        }
+        val validNewsList: (Any) -> Boolean = { value ->
+            value is List<*> && value.all { item ->
+                item is News && runCatching {
+                    item.title.isNotBlank() &&
+                        item.content.isNotBlank() &&
+                        item.dateString.isNotBlank() &&
+                        item.type in NewsType.entries
+                }.getOrDefault(false)
+            }
+        }
 
         return validPayload(snapshot.teamJson, NbaTeam::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.coachJson, Coach::class.java, JsonToken.BEGIN_OBJECT) &&
@@ -83,21 +98,26 @@ object DataExporter {
             validPayload(snapshot.seasonJson, Season::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.historyJson, HistoryManager::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.awardsJson, Awards::class.java, JsonToken.BEGIN_OBJECT) &&
-            validPayload(snapshot.startingFiveJson, listPlayerType, JsonToken.BEGIN_ARRAY) &&
-            validPayload(snapshot.freeAgentsJson, listPlayerType, JsonToken.BEGIN_ARRAY) &&
-            validPayload(snapshot.draftRookiesJson, listPlayerType, JsonToken.BEGIN_ARRAY) &&
-            validPayload(snapshot.contractsJson, listContractType, JsonToken.BEGIN_ARRAY) &&
-            validPayload(snapshot.staffMarketJson, listStaffType, JsonToken.BEGIN_ARRAY) &&
-            validPayload(snapshot.notificationsJson, listNotificationType, JsonToken.BEGIN_ARRAY) &&
+            validPayload(snapshot.startingFiveJson, listPlayerType, JsonToken.BEGIN_ARRAY, nonNullList) &&
+            validPayload(snapshot.freeAgentsJson, listPlayerType, JsonToken.BEGIN_ARRAY, nonNullList) &&
+            validPayload(snapshot.draftRookiesJson, listPlayerType, JsonToken.BEGIN_ARRAY, nonNullList) &&
+            validPayload(snapshot.contractsJson, listContractType, JsonToken.BEGIN_ARRAY, nonNullList) &&
+            validPayload(snapshot.staffMarketJson, listStaffType, JsonToken.BEGIN_ARRAY, nonNullList) &&
+            validPayload(snapshot.notificationsJson, listNotificationType, JsonToken.BEGIN_ARRAY, nonNullList) &&
             validPayload(snapshot.teamStaffJson, TeamStaff::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.facilitiesJson, TeamFacilities::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.financeAdvancedJson, FinanceAdvanced::class.java, JsonToken.BEGIN_OBJECT) &&
-            validPayload(snapshot.newsFeedJson, listNewsType, JsonToken.BEGIN_ARRAY) &&
+            validPayload(snapshot.newsFeedJson, listNewsType, JsonToken.BEGIN_ARRAY, validNewsList) &&
             validPayload(snapshot.latestBoxScoreJson, MatchBoxScore::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.playoffResultJson, Season.PlayoffResult::class.java, JsonToken.BEGIN_OBJECT)
     }
 
-    private fun validPayload(payload: String?, type: Type, expectedRoot: JsonToken): Boolean {
+    private fun validPayload(
+        payload: String?,
+        type: Type,
+        expectedRoot: JsonToken,
+        validateDecoded: (Any) -> Boolean = { true }
+    ): Boolean {
         if (payload == null) return true
         return runCatching {
             JsonReader(StringReader(payload)).use { reader ->
@@ -106,7 +126,9 @@ object DataExporter {
                 reader.skipValue()
                 check(reader.peek() == JsonToken.END_DOCUMENT) { "Trailing JSON content" }
             }
-            check(gson.fromJson<Any>(payload, type) != null) { "JSON payload did not match expected type" }
+            val decoded = gson.fromJson<Any>(payload, type)
+                ?: error("JSON payload did not match expected type")
+            check(validateDecoded(decoded)) { "JSON payload contains invalid elements" }
         }.isSuccess
     }
 
