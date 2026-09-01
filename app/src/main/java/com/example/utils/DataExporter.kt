@@ -87,21 +87,62 @@ object DataExporter {
                 true
             }.getOrDefault(false)
         }
+        val validStaffMember: (StaffMember) -> Boolean = { item ->
+            runCatching {
+                // StaffMemberJsonAdapter can still construct concrete instances whose Kotlin
+                // non-null references are null when required JSON fields are omitted.
+                item.name.length
+                item.specialty.length
+                when (item) {
+                    is HeadCoachStaff -> item.preferredStyle.name
+                    is ExecutiveStaff -> item.roleTitle.length
+                    else -> Unit
+                }
+                true
+            }.getOrDefault(false)
+        }
         val validStaffList: (Any) -> Boolean = { value ->
             value is List<*> && value.all { item ->
-                item is StaffMember && runCatching {
-                    // StaffMemberJsonAdapter can still construct concrete instances whose Kotlin
-                    // non-null references are null when required JSON fields are omitted.
-                    item.name.length
-                    item.specialty.length
-                    when (item) {
-                        is HeadCoachStaff -> item.preferredStyle.name
-                        is ExecutiveStaff -> item.roleTitle.length
-                        else -> Unit
-                    }
-                    true
-                }.getOrDefault(false)
+                item is StaffMember && validStaffMember(item)
             }
+        }
+        val validTeamStaff: (Any) -> Boolean = { value ->
+            value is TeamStaff && runCatching {
+                // TeamStaff methods and UI assume both collections are non-null. Optional single
+                // staff positions may be empty, but every present member must be runtime-safe.
+                value.assistants.size
+                value.executives.size
+                value.headCoach?.let { check(validStaffMember(it)) }
+                value.strengthCoach?.let { check(validStaffMember(it)) }
+                value.scout?.let { check(validStaffMember(it)) }
+                value.teamDoctor?.let { check(validStaffMember(it)) }
+                check(value.assistants.all(validStaffMember))
+                check(value.executives.all(validStaffMember))
+                true
+            }.getOrDefault(false)
+        }
+        val validFacilities: (Any) -> Boolean = { value ->
+            value is TeamFacilities && runCatching {
+                listOf(value.arena, value.training, value.medical, value.scouting).forEach { facility ->
+                    facility.type.name
+                    facility.name.length
+                }
+                true
+            }.getOrDefault(false)
+        }
+        val validFinanceAdvanced: (Any) -> Boolean = { value ->
+            value is FinanceAdvanced && runCatching {
+                // FinanceAdvancedScreen and calculations dereference these nested objects/lists.
+                value.ownerObjective.length
+                value.revenues.totalRevenue()
+                value.expenses.totalExpenses()
+                value.activeSponsorships.size
+                value.activeSponsorships.forEach { deal ->
+                    deal.brandName.length
+                    deal.type.length
+                }
+                true
+            }.getOrDefault(false)
         }
         val validNotificationList: (Any) -> Boolean = { value ->
             value is List<*> && value.all { item ->
@@ -157,6 +198,25 @@ object DataExporter {
                 true
             }.getOrDefault(false)
         }
+        val validPlayoffResult: (Any) -> Boolean = { value ->
+            value is Season.PlayoffResult && runCatching {
+                // Career resume and celebration paths immediately dereference champions and series.
+                value.eastChampion.name.length
+                value.westChampion.name.length
+                value.nbaChampion.name.length
+                value.seriesResults.size
+                value.seriesResults.forEach { series ->
+                    series.winner.name.length
+                    series.games.size
+                    series.roundName.length
+                    series.team1?.name?.length
+                    series.team2?.name?.length
+                    series.mvp?.name?.length
+                }
+                value.mvp?.name?.length
+                true
+            }.getOrDefault(false)
+        }
 
         return validPayload(snapshot.teamJson, NbaTeam::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.coachJson, Coach::class.java, JsonToken.BEGIN_OBJECT) &&
@@ -180,9 +240,14 @@ object DataExporter {
                 JsonToken.BEGIN_ARRAY,
                 validNotificationList
             ) &&
-            validPayload(snapshot.teamStaffJson, TeamStaff::class.java, JsonToken.BEGIN_OBJECT) &&
-            validPayload(snapshot.facilitiesJson, TeamFacilities::class.java, JsonToken.BEGIN_OBJECT) &&
-            validPayload(snapshot.financeAdvancedJson, FinanceAdvanced::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.teamStaffJson, TeamStaff::class.java, JsonToken.BEGIN_OBJECT, validTeamStaff) &&
+            validPayload(snapshot.facilitiesJson, TeamFacilities::class.java, JsonToken.BEGIN_OBJECT, validFacilities) &&
+            validPayload(
+                snapshot.financeAdvancedJson,
+                FinanceAdvanced::class.java,
+                JsonToken.BEGIN_OBJECT,
+                validFinanceAdvanced
+            ) &&
             validPayload(snapshot.newsFeedJson, listNewsType, JsonToken.BEGIN_ARRAY, validNewsList) &&
             validPayload(
                 snapshot.latestBoxScoreJson,
@@ -190,7 +255,12 @@ object DataExporter {
                 JsonToken.BEGIN_OBJECT,
                 validMatchBoxScore
             ) &&
-            validPayload(snapshot.playoffResultJson, Season.PlayoffResult::class.java, JsonToken.BEGIN_OBJECT)
+            validPayload(
+                snapshot.playoffResultJson,
+                Season.PlayoffResult::class.java,
+                JsonToken.BEGIN_OBJECT,
+                validPlayoffResult
+            )
     }
 
     private fun hasRequiredObjectFields(payload: String?, requiredFields: Set<String>): Boolean {
