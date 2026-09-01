@@ -229,7 +229,10 @@ class GameStateRepository(
             .toList()
 
         val recoveredFromStartingFive = startingFiveTeamIds.singleOrNull()
-        val recoveredFromSlotMetadata = if (recoveredFromStartingFive == null) {
+        // Slot metadata is a weaker compatibility signal. Use it only when normalized
+        // starting-five ownership is completely absent; contradictory ownership across
+        // multiple teams must remain an integrity failure instead of being overwritten.
+        val recoveredFromSlotMetadata = if (startingFiveTeamIds.isEmpty()) {
             val activeSlot = SaveSlotManager.getActiveSlot(context)
             val teamName = SaveSlotManager.getSlots(context)
                 .firstOrNull { it.slotId == activeSlot && it.occupied }
