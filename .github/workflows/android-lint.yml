@@ -4,13 +4,17 @@ on:
   push:
     branches:
       - main
-      - master
-      - fix/android-build-validation
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: android-lint-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:

@@ -2,12 +2,19 @@ name: Security Audit
 
 on:
   push:
-    branches: ["main", "master"]
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   secret-scan:
@@ -17,6 +24,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
       - name: Scan repository for private keys and common API-key patterns
         shell: bash
         run: |
