@@ -25,6 +25,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -151,6 +152,53 @@ class LegacyManagedTeamMigrationTest {
         assertEquals(managed.name, recoveredTeam.name)
         assertEquals(managed.name, recoveredSeason.userTeamName)
         assertEquals(managed.abbreviation, db.seasonDao().current()?.userTeamId)
+    }
+
+    @Test
+    fun normalizedSnapshotWithAmbiguousStartingFiveRejectsSlotMetadataFallback() = runBlocking {
+        val teams = NbaDataGenerator.getAllTeams()
+        val managed = teams[8]
+        val conflicting = teams[9]
+        val finance = Finance(80_000_000)
+        val season = Season(
+            teams = teams,
+            currentDay = 35,
+            gamesPlayed = 35,
+            seasonNumber = 3,
+            nextPlayerId = teams.flatMap { it.players }.maxOf { it.id } + 1
+        ).apply {
+            userTeamName = managed.name
+        }
+
+        repository.save(snapshotFor(managed, season, finance))
+        val persisted = db.seasonDao().current()
+        assertNotNull(persisted)
+        db.seasonDao().upsert(persisted!!.copy(userTeamId = null))
+
+        val managedStarterId = managed.players.first().id
+        val conflictingStarterId = conflicting.players.first().id
+        db.playerDao().upsertAll(db.playerDao().all().map { row ->
+            when (row.id) {
+                managedStarterId, conflictingStarterId -> row.copy(startingFive = true)
+                else -> row.copy(startingFive = false)
+            }
+        })
+
+        // Even if the slot metadata points to the originally managed team, contradictory
+        // normalized ownership evidence must not be overwritten by the weaker signal.
+        SaveSlotManager.setActiveSlot(context, 3)
+        SaveSlotManager.updateSlot(context, 3, managed, season, finance, difficulty = 1)
+
+        var failure: IllegalStateException? = null
+        try {
+            repository.load()
+        } catch (error: IllegalStateException) {
+            failure = error
+        }
+
+        assertNotNull(failure)
+        assertEquals("Incomplete normalized save: managed team is missing", failure?.message)
+        assertNull(db.seasonDao().current()?.userTeamId)
     }
 
     private fun snapshotFor(
