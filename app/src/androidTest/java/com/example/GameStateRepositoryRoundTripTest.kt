@@ -141,4 +141,57 @@ class GameStateRepositoryRoundTripTest {
         assertEquals(2, loadedSeason.seasonNumber)
         assertNull("Prior-season awards must not be restored as current awards", loaded.awardsJson)
     }
+
+    @Test
+    fun replacementSnapshotPreservesItsOwnLatestBoxScore() = runBlocking {
+        val teams = NbaDataGenerator.getAllTeams()
+        val managed = teams.first()
+        val baseSnapshot = GameStateRepository.GameStateSnapshot(
+            teamJson = gson.toJson(managed),
+            coachJson = gson.toJson(Coach(1, "Coach", 80, 80, 80, 350_000, 3)),
+            financeJson = gson.toJson(Finance(100_000_000)),
+            tacticsJson = gson.toJson(Tactics()),
+            seasonJson = null,
+            historyJson = gson.toJson(HistoryManager()),
+            awardsJson = null,
+            startingFiveJson = gson.toJson(managed.players.take(5)),
+            freeAgentsJson = gson.toJson(emptyList<Player>()),
+            draftRookiesJson = gson.toJson(emptyList<Player>()),
+            contractsJson = gson.toJson(emptyList<PlayerContract>()),
+            staffMarketJson = gson.toJson(emptyList<StaffMember>()),
+            notificationsJson = gson.toJson(emptyList<AssistantCoachNotification>()),
+            teamStaffJson = gson.toJson(TeamStaff()),
+            facilitiesJson = gson.toJson(TeamFacilities()),
+            financeAdvancedJson = gson.toJson(FinanceAdvanced()),
+            newsFeedJson = gson.toJson(emptyList<News>()),
+            latestBoxScoreJson = null,
+            playoffResultJson = null,
+            difficulty = 1,
+            injuriesEnabled = true,
+            autoSubstitutionsEnabled = true
+        )
+
+        val seasonOne = Season(teams, currentDay = 82, gamesPlayed = 82, seasonNumber = 1).apply {
+            userTeamName = managed.name
+        }
+        repository.save(baseSnapshot.copy(
+            seasonJson = gson.toJson(seasonOne),
+            latestBoxScoreJson = "destination-box-score"
+        ))
+
+        val importedSeason = Season(teams, currentDay = 20, gamesPlayed = 20, seasonNumber = 2).apply {
+            userTeamName = managed.name
+        }
+        repository.save(baseSnapshot.copy(
+            seasonJson = gson.toJson(importedSeason),
+            latestBoxScoreJson = "imported-current-box-score"
+        ))
+
+        val loaded = repository.load()
+
+        assertNotNull(loaded)
+        val loadedSeason = gson.fromJson(loaded!!.seasonJson, Season::class.java)
+        assertEquals(2, loadedSeason.seasonNumber)
+        assertEquals("imported-current-box-score", loaded.latestBoxScoreJson)
+    }
 }

@@ -1106,6 +1106,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
         playoffResult = null
         latestResult = null
+        latestBoxScore = null
         currentAwards = null
         generateFreeAgents()
         gameState = GameState.ACTIVE
