@@ -80,6 +80,30 @@ object DataExporter {
         val nonNullList: (Any) -> Boolean = { value ->
             value is List<*> && value.all { it != null }
         }
+        val validTactics: (Any) -> Boolean = { value ->
+            value is Tactics && runCatching {
+                // Gson bypasses Kotlin constructor defaults and can leave style null for `{}`.
+                // Touch the reference used by SimulationRules before accepting an import.
+                value.style.name
+                true
+            }.getOrDefault(false)
+        }
+        val validStaffList: (Any) -> Boolean = { value ->
+            value is List<*> && value.all { item ->
+                item is StaffMember && runCatching {
+                    // StaffMemberJsonAdapter can still construct concrete instances whose Kotlin
+                    // non-null references are null when required JSON fields are omitted.
+                    item.name.length
+                    item.specialty.length
+                    when (item) {
+                        is HeadCoachStaff -> item.preferredStyle.name
+                        is ExecutiveStaff -> item.roleTitle.length
+                        else -> Unit
+                    }
+                    true
+                }.getOrDefault(false)
+            }
+        }
         val validNotificationList: (Any) -> Boolean = { value ->
             value is List<*> && value.all { item ->
                 item is AssistantCoachNotification && runCatching {
@@ -138,7 +162,7 @@ object DataExporter {
         return validPayload(snapshot.teamJson, NbaTeam::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.coachJson, Coach::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.financeJson, Finance::class.java, JsonToken.BEGIN_OBJECT) &&
-            validPayload(snapshot.tacticsJson, Tactics::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.tacticsJson, Tactics::class.java, JsonToken.BEGIN_OBJECT, validTactics) &&
             validPayload(snapshot.seasonJson, Season::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.historyJson, HistoryManager::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.awardsJson, Awards::class.java, JsonToken.BEGIN_OBJECT) &&
@@ -146,7 +170,7 @@ object DataExporter {
             validPayload(snapshot.freeAgentsJson, listPlayerType, JsonToken.BEGIN_ARRAY, nonNullList) &&
             validPayload(snapshot.draftRookiesJson, listPlayerType, JsonToken.BEGIN_ARRAY, nonNullList) &&
             validPayload(snapshot.contractsJson, listContractType, JsonToken.BEGIN_ARRAY, nonNullList) &&
-            validPayload(snapshot.staffMarketJson, listStaffType, JsonToken.BEGIN_ARRAY, nonNullList) &&
+            validPayload(snapshot.staffMarketJson, listStaffType, JsonToken.BEGIN_ARRAY, validStaffList) &&
             validPayload(
                 snapshot.notificationsJson,
                 listNotificationType,
