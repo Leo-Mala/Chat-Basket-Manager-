@@ -80,6 +80,26 @@ object DataExporter {
         val nonNullList: (Any) -> Boolean = { value ->
             value is List<*> && value.all { it != null }
         }
+        val validNotificationList: (Any) -> Boolean = { value ->
+            value is List<*> && value.all { item ->
+                item is AssistantCoachNotification && runCatching {
+                    // Gson can create Kotlin objects with null values for non-null properties.
+                    // Touch every reference consumed by NotificationsTab before accepting import.
+                    item.id.length
+                    item.opponentName.length
+                    item.coachName.length
+                    item.coachRole.length
+                    item.summary.length
+                    item.keyStrengths.size
+                    item.areasToImprove.size
+                    item.playerHighlights.size
+                    item.tacticalAdvice.length
+                    item.keyStrengths.all { it.isNotBlank() } &&
+                        item.areasToImprove.all { it.isNotBlank() } &&
+                        item.playerHighlights.all { it.isNotBlank() }
+                }.getOrDefault(false)
+            }
+        }
         val validNewsList: (Any) -> Boolean = { value ->
             value is List<*> && value.all { item ->
                 item is News && runCatching {
@@ -127,7 +147,12 @@ object DataExporter {
             validPayload(snapshot.draftRookiesJson, listPlayerType, JsonToken.BEGIN_ARRAY, nonNullList) &&
             validPayload(snapshot.contractsJson, listContractType, JsonToken.BEGIN_ARRAY, nonNullList) &&
             validPayload(snapshot.staffMarketJson, listStaffType, JsonToken.BEGIN_ARRAY, nonNullList) &&
-            validPayload(snapshot.notificationsJson, listNotificationType, JsonToken.BEGIN_ARRAY, nonNullList) &&
+            validPayload(
+                snapshot.notificationsJson,
+                listNotificationType,
+                JsonToken.BEGIN_ARRAY,
+                validNotificationList
+            ) &&
             validPayload(snapshot.teamStaffJson, TeamStaff::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.facilitiesJson, TeamFacilities::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.financeAdvancedJson, FinanceAdvanced::class.java, JsonToken.BEGIN_OBJECT) &&
