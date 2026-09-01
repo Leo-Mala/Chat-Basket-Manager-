@@ -3,13 +3,15 @@ package com.example.utils
 import android.content.Context
 import com.example.data.repository.GameStateRepository
 import com.example.domain.rules.SavedGameStartupRules
-import com.example.models.Finance
-import com.example.models.NbaTeam
-import com.example.models.Season
+import com.example.models.*
 import com.google.gson.Gson
-import com.google.gson.JsonParser
+import com.google.gson.reflect.TypeToken
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
 import java.io.File
 import java.io.FileWriter
+import java.io.StringReader
+import java.lang.reflect.Type
 import kotlinx.coroutines.runBlocking
 
 /** Import/export uses the Room-backed save instead of SharedPreferences. */
@@ -68,30 +70,44 @@ object DataExporter {
     }
 
     private fun hasValidJsonPayloads(snapshot: GameStateRepository.GameStateSnapshot): Boolean {
-        val payloads = listOfNotNull(
-            snapshot.teamJson,
-            snapshot.coachJson,
-            snapshot.financeJson,
-            snapshot.tacticsJson,
-            snapshot.seasonJson,
-            snapshot.historyJson,
-            snapshot.awardsJson,
-            snapshot.startingFiveJson,
-            snapshot.freeAgentsJson,
-            snapshot.draftRookiesJson,
-            snapshot.contractsJson,
-            snapshot.staffMarketJson,
-            snapshot.notificationsJson,
-            snapshot.teamStaffJson,
-            snapshot.facilitiesJson,
-            snapshot.financeAdvancedJson,
-            snapshot.newsFeedJson,
-            snapshot.latestBoxScoreJson,
-            snapshot.playoffResultJson
-        )
-        return payloads.all { payload ->
-            runCatching { JsonParser.parseString(payload) }.isSuccess
-        }
+        val listPlayerType = object : TypeToken<List<Player>>() {}.type
+        val listContractType = object : TypeToken<List<PlayerContract>>() {}.type
+        val listStaffType = object : TypeToken<List<StaffMember>>() {}.type
+        val listNotificationType = object : TypeToken<List<AssistantCoachNotification>>() {}.type
+        val listNewsType = object : TypeToken<List<News>>() {}.type
+
+        return validPayload(snapshot.teamJson, NbaTeam::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.coachJson, Coach::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.financeJson, Finance::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.tacticsJson, Tactics::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.seasonJson, Season::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.historyJson, HistoryManager::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.awardsJson, Awards::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.startingFiveJson, listPlayerType, JsonToken.BEGIN_ARRAY) &&
+            validPayload(snapshot.freeAgentsJson, listPlayerType, JsonToken.BEGIN_ARRAY) &&
+            validPayload(snapshot.draftRookiesJson, listPlayerType, JsonToken.BEGIN_ARRAY) &&
+            validPayload(snapshot.contractsJson, listContractType, JsonToken.BEGIN_ARRAY) &&
+            validPayload(snapshot.staffMarketJson, listStaffType, JsonToken.BEGIN_ARRAY) &&
+            validPayload(snapshot.notificationsJson, listNotificationType, JsonToken.BEGIN_ARRAY) &&
+            validPayload(snapshot.teamStaffJson, TeamStaff::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.facilitiesJson, TeamFacilities::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.financeAdvancedJson, FinanceAdvanced::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.newsFeedJson, listNewsType, JsonToken.BEGIN_ARRAY) &&
+            validPayload(snapshot.latestBoxScoreJson, MatchBoxScore::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.playoffResultJson, Season.PlayoffResult::class.java, JsonToken.BEGIN_OBJECT)
+    }
+
+    private fun validPayload(payload: String?, type: Type, expectedRoot: JsonToken): Boolean {
+        if (payload == null) return true
+        return runCatching {
+            JsonReader(StringReader(payload)).use { reader ->
+                reader.isLenient = false
+                check(reader.peek() == expectedRoot) { "Unexpected JSON root" }
+                reader.skipValue()
+                check(reader.peek() == JsonToken.END_DOCUMENT) { "Trailing JSON content" }
+            }
+            check(gson.fromJson<Any>(payload, type) != null) { "JSON payload did not match expected type" }
+        }.isSuccess
     }
 
     @Deprecated("Use exportCurrentGame/importGame. Generic preference import was removed with the Room migration.")
