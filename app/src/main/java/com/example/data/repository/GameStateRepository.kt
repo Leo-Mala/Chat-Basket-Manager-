@@ -268,10 +268,10 @@ class GameStateRepository(
             "Incomplete normalized save: current standings do not cover every team"
         }
 
-        val rosterIds = activePlayers.filter { it.teamId != null }.map { it.id }.toSet()
-        val contractIds = db.contractDao().all().map { it.playerId }.toSet()
-        check(rosterIds.all { it in contractIds }) {
-            "Incomplete normalized save: roster player is missing a contract"
+        val rosterPlayers = activePlayers.filter { it.teamId != null }
+        val contractsByPlayer = db.contractDao().all().associateBy { it.playerId }
+        check(rosterPlayers.all { player -> contractsByPlayer[player.id]?.teamId == player.teamId }) {
+            "Incomplete normalized save: roster contract ownership mismatch"
         }
     }
 
