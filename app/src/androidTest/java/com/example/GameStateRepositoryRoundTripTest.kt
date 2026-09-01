@@ -143,7 +143,7 @@ class GameStateRepositoryRoundTripTest {
     }
 
     @Test
-    fun priorSeasonLatestBoxScoreDoesNotLeakIntoNextSeason() = runBlocking {
+    fun replacementSnapshotPreservesItsOwnLatestBoxScore() = runBlocking {
         val teams = NbaDataGenerator.getAllTeams()
         val managed = teams.first()
         val baseSnapshot = GameStateRepository.GameStateSnapshot(
@@ -164,7 +164,7 @@ class GameStateRepositoryRoundTripTest {
             facilitiesJson = gson.toJson(TeamFacilities()),
             financeAdvancedJson = gson.toJson(FinanceAdvanced()),
             newsFeedJson = gson.toJson(emptyList<News>()),
-            latestBoxScoreJson = "season-one-box-score",
+            latestBoxScoreJson = null,
             playoffResultJson = null,
             difficulty = 1,
             injuriesEnabled = true,
@@ -174,14 +174,17 @@ class GameStateRepositoryRoundTripTest {
         val seasonOne = Season(teams, currentDay = 82, gamesPlayed = 82, seasonNumber = 1).apply {
             userTeamName = managed.name
         }
-        repository.save(baseSnapshot.copy(seasonJson = gson.toJson(seasonOne)))
+        repository.save(baseSnapshot.copy(
+            seasonJson = gson.toJson(seasonOne),
+            latestBoxScoreJson = "destination-box-score"
+        ))
 
-        val seasonTwo = Season(teams, currentDay = 0, gamesPlayed = 0, seasonNumber = 2).apply {
+        val importedSeason = Season(teams, currentDay = 20, gamesPlayed = 20, seasonNumber = 2).apply {
             userTeamName = managed.name
         }
         repository.save(baseSnapshot.copy(
-            seasonJson = gson.toJson(seasonTwo),
-            latestBoxScoreJson = "season-one-box-score"
+            seasonJson = gson.toJson(importedSeason),
+            latestBoxScoreJson = "imported-current-box-score"
         ))
 
         val loaded = repository.load()
@@ -189,6 +192,6 @@ class GameStateRepositoryRoundTripTest {
         assertNotNull(loaded)
         val loadedSeason = gson.fromJson(loaded!!.seasonJson, Season::class.java)
         assertEquals(2, loadedSeason.seasonNumber)
-        assertNull("Prior-season box score must not survive a season boundary", loaded.latestBoxScoreJson)
+        assertEquals("imported-current-box-score", loaded.latestBoxScoreJson)
     }
 }
