@@ -2,6 +2,10 @@ package com.example.utils
 
 import android.content.Context
 import com.example.data.repository.GameStateRepository
+import com.example.domain.rules.SavedGameStartupRules
+import com.example.models.Finance
+import com.example.models.NbaTeam
+import com.example.models.Season
 import com.google.gson.Gson
 import java.io.File
 import java.io.FileWriter
@@ -32,7 +36,27 @@ object DataExporter {
             if (!file.exists()) return@runBlocking false
             val snapshot = gson.fromJson(file.readText(), GameStateRepository.GameStateSnapshot::class.java)
                 ?: return@runBlocking false
-            GameStateRepository(context).save(snapshot)
+            if (!SavedGameStartupRules.hasRequiredCore(snapshot)) return@runBlocking false
+
+            // Validate and reconstruct the metadata before mutating the destination save.
+            // This prevents an incomplete import from replacing compatibility state while
+            // still reporting success, and lets the menu registry follow the imported career.
+            val repository = GameStateRepository(context)
+            val team = repository.fromJson(snapshot.teamJson, NbaTeam::class.java)
+                ?: return@runBlocking false
+            val season = repository.fromJson(snapshot.seasonJson, Season::class.java)
+                ?: return@runBlocking false
+            val finance = snapshot.financeJson?.let { repository.fromJson(it, Finance::class.java) }
+
+            repository.save(snapshot)
+            SaveSlotManager.updateSlot(
+                context = context,
+                slotId = SaveSlotManager.getActiveSlot(context),
+                team = team,
+                season = season,
+                finance = finance,
+                difficulty = snapshot.difficulty
+            )
             true
         } catch (e: Exception) {
             e.printStackTrace()
