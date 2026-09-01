@@ -34,7 +34,8 @@ class GameStateRepository(
         val seasons = db.seasonDao().all()
         if (teams.isNotEmpty() || seasons.isNotEmpty()) {
             check(teams.isNotEmpty() && seasons.isNotEmpty()) { "Incomplete normalized save: teams/seasons mismatch" }
-            validateNormalizedCore(teams, seasons)
+            val recoveredSeasons = recoverManagedTeamIdentity(teams, seasons)
+            validateNormalizedCore(teams, recoveredSeasons)
             normalizedSnapshot()
         } else {
             val allowLegacyPreferences = database != null || SaveSlotManager.getActiveSlot(context) == 1
@@ -211,11 +212,46 @@ class GameStateRepository(
         }
     }
 
+    private suspend fun recoverManagedTeamIdentity(
+        teams: List<TeamEntity>,
+        seasons: List<SeasonEntity>
+    ): List<SeasonEntity> {
+        val current = seasons.maxByOrNull { it.seasonNumber } ?: return seasons
+        if (current.userTeamId != null) return seasons
+
+        val validTeamIds = teams.map { it.id }.toSet()
+        val startingFiveTeamIds = db.playerDao().all()
+            .asSequence()
+            .filter { it.active && it.startingFive }
+            .mapNotNull { it.teamId }
+            .filter { it in validTeamIds }
+            .distinct()
+            .toList()
+
+        val recoveredFromStartingFive = startingFiveTeamIds.singleOrNull()
+        val recoveredFromSlotMetadata = if (recoveredFromStartingFive == null) {
+            val activeSlot = SaveSlotManager.getActiveSlot(context)
+            val teamName = SaveSlotManager.getSlots(context)
+                .firstOrNull { it.slotId == activeSlot && it.occupied }
+                ?.teamName
+            teamName?.let { expectedName ->
+                teams.singleOrNull { it.name == expectedName }?.id
+            }
+        } else {
+            null
+        }
+
+        val recoveredTeamId = recoveredFromStartingFive ?: recoveredFromSlotMetadata ?: return seasons
+        val repaired = current.copy(userTeamId = recoveredTeamId)
+        db.seasonDao().upsert(repaired)
+        return seasons.map { if (it.id == repaired.id) repaired else it }
+    }
+
     private suspend fun validateNormalizedCore(teams: List<TeamEntity>, seasons: List<SeasonEntity>) {
         val current = seasons.maxByOrNull { it.seasonNumber }
             ?: error("Incomplete normalized save: missing current season")
         val teamIds = teams.map { it.id }.toSet()
-        check(current.userTeamId == null || current.userTeamId in teamIds) {
+        check(current.userTeamId != null && current.userTeamId in teamIds) {
             "Incomplete normalized save: managed team is missing"
         }
 
@@ -284,7 +320,7 @@ class GameStateRepository(
             }
         }
 
-        val managedTeam = season?.userTeamName?.let { name -> teamModels.firstOrNull { it.name == name } } ?: teamModels.firstOrNull()
+        val managedTeam = season?.userTeamName?.let { name -> teamModels.firstOrNull { it.name == name } }
         val pool = activePlayers.filter { it.teamId == null }
         val start = activePlayers.filter { it.startingFive }.map { it.toModel() }
         val free = pool.filter { it.poolType == "FREE_AGENT" }.map { it.toModel() }
