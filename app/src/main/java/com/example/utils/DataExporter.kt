@@ -7,6 +7,7 @@ import com.example.models.Finance
 import com.example.models.NbaTeam
 import com.example.models.Season
 import com.google.gson.Gson
+import com.google.gson.JsonParser
 import java.io.File
 import java.io.FileWriter
 import kotlinx.coroutines.runBlocking
@@ -37,6 +38,7 @@ object DataExporter {
             val snapshot = gson.fromJson(file.readText(), GameStateRepository.GameStateSnapshot::class.java)
                 ?: return@runBlocking false
             if (!SavedGameStartupRules.hasRequiredCore(snapshot)) return@runBlocking false
+            if (!hasValidJsonPayloads(snapshot)) return@runBlocking false
 
             // Validate and reconstruct the metadata before mutating the destination save.
             // This prevents an incomplete or internally inconsistent import from replacing
@@ -62,6 +64,33 @@ object DataExporter {
         } catch (e: Exception) {
             e.printStackTrace()
             false
+        }
+    }
+
+    private fun hasValidJsonPayloads(snapshot: GameStateRepository.GameStateSnapshot): Boolean {
+        val payloads = listOfNotNull(
+            snapshot.teamJson,
+            snapshot.coachJson,
+            snapshot.financeJson,
+            snapshot.tacticsJson,
+            snapshot.seasonJson,
+            snapshot.historyJson,
+            snapshot.awardsJson,
+            snapshot.startingFiveJson,
+            snapshot.freeAgentsJson,
+            snapshot.draftRookiesJson,
+            snapshot.contractsJson,
+            snapshot.staffMarketJson,
+            snapshot.notificationsJson,
+            snapshot.teamStaffJson,
+            snapshot.facilitiesJson,
+            snapshot.financeAdvancedJson,
+            snapshot.newsFeedJson,
+            snapshot.latestBoxScoreJson,
+            snapshot.playoffResultJson
+        )
+        return payloads.all { payload ->
+            runCatching { JsonParser.parseString(payload) }.isSuccess
         }
     }
 
