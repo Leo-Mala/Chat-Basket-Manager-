@@ -90,6 +90,30 @@ object DataExporter {
                 }.getOrDefault(false)
             }
         }
+        val validMatchBoxScore: (Any) -> Boolean = { value ->
+            value is MatchBoxScore && runCatching {
+                // Gson can instantiate Kotlin data classes with missing non-null fields as null.
+                // Touch every reference that BoxScoreScreen relies on so an incomplete object is
+                // rejected here, before it can replace the destination career.
+                value.matchId.length
+                value.dateString.length
+                value.homeTeamName.length
+                value.awayTeamName.length
+                value.homeQuarterScores.size
+                value.awayQuarterScores.size
+                value.homePlayers.forEach { player ->
+                    player.playerName.length
+                    player.position.length
+                }
+                value.awayPlayers.forEach { player ->
+                    player.playerName.length
+                    player.position.length
+                }
+                value.homeTeamTotals.teamName.length
+                value.awayTeamTotals.teamName.length
+                true
+            }.getOrDefault(false)
+        }
 
         return validPayload(snapshot.teamJson, NbaTeam::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.coachJson, Coach::class.java, JsonToken.BEGIN_OBJECT) &&
@@ -108,7 +132,12 @@ object DataExporter {
             validPayload(snapshot.facilitiesJson, TeamFacilities::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.financeAdvancedJson, FinanceAdvanced::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.newsFeedJson, listNewsType, JsonToken.BEGIN_ARRAY, validNewsList) &&
-            validPayload(snapshot.latestBoxScoreJson, MatchBoxScore::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(
+                snapshot.latestBoxScoreJson,
+                MatchBoxScore::class.java,
+                JsonToken.BEGIN_OBJECT,
+                validMatchBoxScore
+            ) &&
             validPayload(snapshot.playoffResultJson, Season.PlayoffResult::class.java, JsonToken.BEGIN_OBJECT)
     }
 
