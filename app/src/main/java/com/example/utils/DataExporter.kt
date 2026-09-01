@@ -39,13 +39,14 @@ object DataExporter {
             if (!SavedGameStartupRules.hasRequiredCore(snapshot)) return@runBlocking false
 
             // Validate and reconstruct the metadata before mutating the destination save.
-            // This prevents an incomplete import from replacing compatibility state while
-            // still reporting success, and lets the menu registry follow the imported career.
+            // This prevents an incomplete or internally inconsistent import from replacing
+            // compatibility state while still reporting success.
             val repository = GameStateRepository(context)
             val team = repository.fromJson(snapshot.teamJson, NbaTeam::class.java)
                 ?: return@runBlocking false
             val season = repository.fromJson(snapshot.seasonJson, Season::class.java)
                 ?: return@runBlocking false
+            if (season.teams.none { it.name == team.name }) return@runBlocking false
             val finance = snapshot.financeJson?.let { repository.fromJson(it, Finance::class.java) }
 
             repository.save(snapshot)
