@@ -16,5 +16,6 @@ echo "== Basket Manager build verification =="
 "${GRADLE_CMD[@]}" --no-daemon assembleDebug --stacktrace
 "${GRADLE_CMD[@]}" --no-daemon assembleRelease --stacktrace
 "${GRADLE_CMD[@]}" --no-daemon bundleRelease --stacktrace
+"${GRADLE_CMD[@]}" --no-daemon connectedDebugAndroidTest --stacktrace
 
 echo "Build verification completed successfully."
