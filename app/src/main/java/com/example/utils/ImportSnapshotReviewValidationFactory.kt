@@ -161,34 +161,31 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
                 throw JsonParseException("Historical away team is not canonical")
             }
 
-            val recordedHomePlayers = result.homeTeam.players.associateBy(Player::id)
-            val recordedAwayPlayers = result.awayTeam.players.associateBy(Player::id)
+            // Room persists each historical stat row with the game-side team id and player id,
+            // while PlayerEntity stores only the player's current roster. After a trade and reload,
+            // the historical GameResult is reconstructed with the current team roster even though
+            // its stat row still legitimately refers to the traded player. Current-roster
+            // membership therefore cannot be used as an import invariant without rejecting native
+            // exports. What is losslessly preserved is the game-side team id plus canonical player
+            // identity, so require that identity to round-trip exactly.
             result.homeStats.keys.forEach { historical ->
-                val recorded = recordedHomePlayers[historical.id]
-                    ?: throw JsonParseException("Historical home stats contain a player outside the recorded home roster")
                 val canonical = canonicalPlayers[historical.id]
                     ?: throw JsonParseException("Historical home stats reference a player outside persisted player state")
-                if (historical != recorded || historical != canonical) {
+                if (historical != canonical) {
                     throw JsonParseException("Historical home stats conflict with persisted player state")
                 }
             }
             result.awayStats.keys.forEach { historical ->
-                val recorded = recordedAwayPlayers[historical.id]
-                    ?: throw JsonParseException("Historical away stats contain a player outside the recorded away roster")
                 val canonical = canonicalPlayers[historical.id]
                     ?: throw JsonParseException("Historical away stats reference a player outside persisted player state")
-                if (historical != recorded || historical != canonical) {
+                if (historical != canonical) {
                     throw JsonParseException("Historical away stats conflict with persisted player state")
                 }
             }
-
-            val recordedParticipants = recordedHomePlayers + recordedAwayPlayers
             result.injuries.forEach { injury ->
-                val recorded = recordedParticipants[injury.player.id]
-                    ?: throw JsonParseException("Historical injury references a player outside recorded participants")
                 val canonical = canonicalPlayers[injury.player.id]
                     ?: throw JsonParseException("Historical injury references a player outside persisted player state")
-                if (injury.player != recorded || injury.player != canonical) {
+                if (injury.player != canonical) {
                     throw JsonParseException("Historical injury player conflicts with persisted player state")
                 }
             }
