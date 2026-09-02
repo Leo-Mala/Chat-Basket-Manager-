@@ -179,11 +179,13 @@ class DataExporterImportIntegrityTest {
     ): GameStateRepository.GameStateSnapshot {
         val teams = NbaDataGenerator.getAllTeams()
         val managed = teams.first()
+        val nextPlayerId = teams.flatMap { it.players }.maxOf { it.id } + 1
         val season = Season(
             teams = teams,
             currentDay = currentDay,
             gamesPlayed = currentDay,
-            seasonNumber = seasonNumber
+            seasonNumber = seasonNumber,
+            nextPlayerId = nextPlayerId
         ).apply {
             userTeamName = managed.name
         }
