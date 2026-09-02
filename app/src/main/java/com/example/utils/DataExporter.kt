@@ -81,6 +81,18 @@ object DataExporter {
         val nonNullList: (Any) -> Boolean = { value ->
             value is List<*> && value.all { it != null }
         }
+        val validPlayerList: (Any) -> Boolean = { value ->
+            value is List<*> && value.all { item ->
+                item is Player && runCatching {
+                    // Gson may instantiate Kotlin objects with omitted required properties as
+                    // zero/null values. Verify runtime-required references while explicit field
+                    // presence is checked separately below.
+                    item.name.length
+                    item.position.length
+                    true
+                }.getOrDefault(false)
+            }
+        }
         val validTactics: (Any) -> Boolean = { value ->
             value is Tactics && runCatching {
                 value.style.name
@@ -217,6 +229,18 @@ object DataExporter {
                 true
             }.getOrDefault(false)
         }
+        val requiredPlayerFields = setOf(
+            "id",
+            "name",
+            "position",
+            "overall",
+            "shooting",
+            "defense",
+            "rebound",
+            "passing",
+            "athleticism",
+            "age"
+        )
 
         return validPayload(snapshot.teamJson, NbaTeam::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.coachJson, Coach::class.java, JsonToken.BEGIN_OBJECT) &&
@@ -229,9 +253,12 @@ object DataExporter {
             validPayload(snapshot.seasonJson, Season::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.historyJson, HistoryManager::class.java, JsonToken.BEGIN_OBJECT) &&
             validPayload(snapshot.awardsJson, Awards::class.java, JsonToken.BEGIN_OBJECT) &&
-            validPayload(snapshot.startingFiveJson, listPlayerType, JsonToken.BEGIN_ARRAY, nonNullList) &&
-            validPayload(snapshot.freeAgentsJson, listPlayerType, JsonToken.BEGIN_ARRAY, nonNullList) &&
-            validPayload(snapshot.draftRookiesJson, listPlayerType, JsonToken.BEGIN_ARRAY, nonNullList) &&
+            validPayload(snapshot.startingFiveJson, listPlayerType, JsonToken.BEGIN_ARRAY, validPlayerList) &&
+            hasRequiredArrayObjectFields(snapshot.startingFiveJson, requiredPlayerFields) &&
+            validPayload(snapshot.freeAgentsJson, listPlayerType, JsonToken.BEGIN_ARRAY, validPlayerList) &&
+            hasRequiredArrayObjectFields(snapshot.freeAgentsJson, requiredPlayerFields) &&
+            validPayload(snapshot.draftRookiesJson, listPlayerType, JsonToken.BEGIN_ARRAY, validPlayerList) &&
+            hasRequiredArrayObjectFields(snapshot.draftRookiesJson, requiredPlayerFields) &&
             validPayload(snapshot.contractsJson, listContractType, JsonToken.BEGIN_ARRAY, nonNullList) &&
             validPayload(snapshot.staffMarketJson, listStaffType, JsonToken.BEGIN_ARRAY, validStaffList) &&
             validPayload(
@@ -270,6 +297,20 @@ object DataExporter {
                 ?: error("JSON payload did not decode to an object")
             requiredFields.all { field ->
                 objectPayload.has(field) && !objectPayload.get(field).isJsonNull
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun hasRequiredArrayObjectFields(payload: String?, requiredFields: Set<String>): Boolean {
+        if (payload == null) return true
+        return runCatching {
+            val arrayPayload = gson.fromJson(payload, com.google.gson.JsonArray::class.java)
+                ?: error("JSON payload did not decode to an array")
+            arrayPayload.all { element ->
+                element.isJsonObject && requiredFields.all { field ->
+                    val objectPayload = element.asJsonObject
+                    objectPayload.has(field) && !objectPayload.get(field).isJsonNull
+                }
             }
         }.getOrDefault(false)
     }
