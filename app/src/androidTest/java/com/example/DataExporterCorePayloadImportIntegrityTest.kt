@@ -292,6 +292,19 @@ class DataExporterCorePayloadImportIntegrityTest {
         repository.save(snapshot(seasonNumber = 5, currentDay = 30, budget = 155_000_000, difficulty = 1))
         val existing = requireNotNull(repository.load())
         val season = gson.fromJson(existing.seasonJson, Season::class.java)
+        // Keep this regression focused on post-trade historical identity while making the imported
+        // lifecycle state internally valid: one completed schedule day means one managed-team
+        // historical result, one game per team in standings, and one full league slate played.
+        season.currentDay = 1
+        season.gamesPlayed = season.teams.size / 2
+        season.history.clear()
+        season.standings.values.forEachIndexed { index, record ->
+            record.gamesPlayed = 1
+            record.wins = if (index % 2 == 0) 1 else 0
+            record.losses = if (index % 2 == 0) 0 else 1
+            record.totalPointsScored = 0
+            record.totalPointsConceded = 0
+        }
         val movedPlayer = season.teams[2].players.first()
         // This mirrors GameStateRepository.normalizedSnapshot(): after a trade, historical games
         // are reconstructed with each team's current roster while stat/injury rows retain the
@@ -317,11 +330,9 @@ class DataExporterCorePayloadImportIntegrityTest {
             injuries = listOf(GameSimulator.Injury(movedPlayer, 2)),
             narration = "Player later moved to another roster"
         )
-        val seasonJson = gson.fromJson(existing.seasonJson, JsonObject::class.java).apply {
-            getAsJsonArray("history").add(gson.toJsonTree(historicalResult))
-        }
+        season.history.add(historicalResult)
         val importFile = File(context.cacheDir, "traded-history-player.json").apply {
-            writeText(exportGson.toJson(existing.copy(seasonJson = gson.toJson(seasonJson))))
+            writeText(exportGson.toJson(existing.copy(seasonJson = gson.toJson(season))))
         }
 
         assertTrue(DataExporter.importGame(context, importFile.absolutePath))
