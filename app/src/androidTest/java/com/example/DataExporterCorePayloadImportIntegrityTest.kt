@@ -293,8 +293,9 @@ class DataExporterCorePayloadImportIntegrityTest {
         val existing = requireNotNull(repository.load())
         val season = gson.fromJson(existing.seasonJson, Season::class.java)
         val movedPlayer = season.teams[2].players.first()
+        val historicalHome = season.teams[0].copy(players = season.teams[0].players + movedPlayer)
         val historicalResult = GameSimulator.GameResult(
-            homeTeam = season.teams[0],
+            homeTeam = historicalHome,
             awayTeam = season.teams[1],
             homeScore = 109,
             awayScore = 104,
