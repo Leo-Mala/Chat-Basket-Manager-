@@ -8,6 +8,7 @@ import com.example.simulator.GameSimulator
 import com.example.simulator.RotationRules
 import com.google.gson.Gson
 import com.google.gson.JsonArray
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
@@ -106,7 +107,30 @@ object DataExporter {
                 check(item.id > 0)
                 check(item.name.isNotBlank())
                 check(item.position.isNotBlank())
+                check(item.overall >= 0)
+                check(item.shooting >= 0)
+                check(item.defense >= 0)
+                check(item.rebound >= 0)
+                check(item.passing >= 0)
+                check(item.athleticism >= 0)
                 check(item.age > 0)
+                check(item.xp >= 0)
+                check(item.trainings >= 0)
+                check(item.injuryDays >= 0)
+                check(item.careerPoints >= 0)
+                check(item.careerRebounds >= 0)
+                check(item.careerAssists >= 0)
+                check(item.careerSteals >= 0)
+                check(item.careerBlocks >= 0)
+                check(item.careerGames >= 0)
+                check(item.championships >= 0)
+                check(item.mvps >= 0)
+                check(item.seasonPoints >= 0)
+                check(item.seasonRebounds >= 0)
+                check(item.seasonAssists >= 0)
+                check(item.seasonSteals >= 0)
+                check(item.seasonBlocks >= 0)
+                check(item.seasonGames >= 0)
                 true
             }.getOrDefault(false)
         }
@@ -140,8 +164,10 @@ object DataExporter {
         }
         val validFinance: (Any) -> Boolean = { value ->
             value is Finance && runCatching {
-                check(value.budget >= 0)
+                value.budget // Negative cash is a valid debt state produced by normal gameplay.
                 value.coachSalaryPaid
+                val sponsorNames = value.sponsors.map { it.name }
+                check(sponsorNames.size == sponsorNames.toSet().size)
                 value.sponsors.forEach {
                     check(it.name.isNotBlank())
                     check(it.amountPerYear >= 0)
@@ -163,21 +189,30 @@ object DataExporter {
                 it is PlayerContract && it.playerId > 0 && it.salary >= 0 && it.yearsRemaining in 0..5
             }
         }
+        val validPlayerStats: (GameSimulator.PlayerStats) -> Boolean = { stats ->
+            stats.points >= 0 && stats.rebounds >= 0 && stats.assists >= 0 &&
+                stats.steals >= 0 && stats.blocks >= 0 && stats.turnovers >= 0
+        }
         val validGameResult: (GameSimulator.GameResult) -> Boolean = { result ->
             runCatching {
                 check(validTeam(result.homeTeam))
                 check(validTeam(result.awayTeam))
+                check(persistenceTeamId(result.homeTeam) != persistenceTeamId(result.awayTeam))
                 check(result.homeScore >= 0)
                 check(result.awayScore >= 0)
                 check(result.attendance >= 0)
                 check(result.narration.isNotBlank())
                 check(result.homeStats.keys.all(validPlayer))
                 check(result.awayStats.keys.all(validPlayer))
+                check(result.homeStats.values.all(validPlayerStats))
+                check(result.awayStats.values.all(validPlayerStats))
                 val homeIds = result.homeStats.keys.map { it.id }
                 val awayIds = result.awayStats.keys.map { it.id }
                 check(homeIds.size == homeIds.toSet().size)
                 check(awayIds.size == awayIds.toSet().size)
                 check(homeIds.toSet().intersect(awayIds.toSet()).isEmpty())
+                val injuryIds = result.injuries.map { it.player.id }
+                check(injuryIds.size == injuryIds.toSet().size)
                 result.injuries.forEach {
                     check(validPlayer(it.player))
                     check(it.daysOut >= 0)
@@ -348,6 +383,8 @@ object DataExporter {
                     item.keyStrengths.all { it.isNotBlank() } && item.areasToImprove.all { it.isNotBlank() } &&
                         item.playerHighlights.all { it.isNotBlank() }
                 }.getOrDefault(false)
+            } && value.filterIsInstance<AssistantCoachNotification>().let { notifications ->
+                notifications.size == value.size && notifications.map { it.id }.let { ids -> ids.size == ids.toSet().size }
             }
         }
         val validNewsList: (Any) -> Boolean = { value ->
@@ -392,13 +429,19 @@ object DataExporter {
             }.getOrDefault(false)
         }
 
-        val requiredPlayerFields = setOf("id", "name", "position", "overall", "shooting", "defense", "rebound", "passing", "athleticism", "age")
+        val requiredPlayerFields = setOf(
+            "id", "name", "position", "overall", "shooting", "defense", "rebound", "passing", "athleticism", "age",
+            "xp", "trainings", "injured", "injuryDays", "careerPoints", "careerRebounds", "careerAssists", "careerSteals",
+            "careerBlocks", "careerGames", "championships", "mvps", "seasonPoints", "seasonRebounds", "seasonAssists",
+            "seasonSteals", "seasonBlocks", "seasonGames"
+        )
         val requiredCoachFields = setOf("id", "name", "offensiveSkill", "defensiveSkill", "motivationalSkill", "salary", "contractYears")
         val requiredFinanceFields = setOf("budget", "sponsors", "expenses", "coachSalaryPaid", "arenaSeatsLevel", "medicalStaffLevel", "scoutingLevel")
-        val requiredContractFields = setOf("playerId", "salary", "yearsRemaining")
+        val requiredContractFields = setOf("playerId", "salary", "yearsRemaining", "playerOption", "noTrade")
         val requiredArenaFields = setOf("name", "city", "capacity", "opened")
         val requiredSeasonFields = setOf("teams", "currentDay", "gamesPlayed", "seasonNumber", "currentMonth", "currentYear", "nextPlayerId", "standings", "history")
         val requiredGameFields = setOf("homeTeam", "awayTeam", "homeScore", "awayScore", "attendance", "homeStats", "awayStats", "injuries", "narration")
+        val requiredPlayerStatFields = setOf("points", "rebounds", "assists", "steals", "blocks", "turnovers", "plusMinus")
         val requiredHistoryFields = setOf("seasonNumber", "champion", "finalScore", "topScorer", "topScorerPoints", "teamWins", "playerStats")
 
         return snapshot.coachJson != null && snapshot.financeJson != null && snapshot.tacticsJson != null &&
@@ -418,7 +461,7 @@ object DataExporter {
             hasRequiredSeasonPlayerFields(snapshot.seasonJson, requiredPlayerFields) &&
             hasRequiredSeasonTeamArenaFields(snapshot.seasonJson, requiredArenaFields) &&
             hasRequiredSeasonStandingsFields(snapshot.seasonJson) &&
-            hasRequiredSeasonGameHistoryFields(snapshot.seasonJson, requiredGameFields) &&
+            hasRequiredSeasonGameHistoryFields(snapshot.seasonJson, requiredGameFields, requiredPlayerStatFields) &&
             hasValidSeasonHistoryReferences(snapshot) &&
             validPayload(snapshot.historyJson, HistoryManager::class.java, JsonToken.BEGIN_OBJECT, validHistory) &&
             hasRequiredHistoryFields(snapshot.historyJson, requiredHistoryFields, requiredPlayerFields) &&
@@ -434,6 +477,7 @@ object DataExporter {
             hasDisjointPersistencePlayerIds(snapshot) &&
             validPayload(snapshot.contractsJson, listContractType, JsonToken.BEGIN_ARRAY, validContracts) &&
             hasRequiredArrayObjectFields(snapshot.contractsJson, requiredContractFields) &&
+            hasValidContractFlags(snapshot.contractsJson) &&
             hasCompleteRosterContractCoverage(snapshot) &&
             validPayload(snapshot.staffMarketJson, listStaffType, JsonToken.BEGIN_ARRAY, validStaffList) &&
             hasRequiredStaffMarketFields(snapshot.staffMarketJson) &&
@@ -449,7 +493,7 @@ object DataExporter {
             validPayload(snapshot.latestBoxScoreJson, MatchBoxScore::class.java, JsonToken.BEGIN_OBJECT, validMatchBoxScore) &&
             hasRequiredBoxScoreFields(snapshot.latestBoxScoreJson) &&
             validPayload(snapshot.playoffResultJson, Season.PlayoffResult::class.java, JsonToken.BEGIN_OBJECT, validPlayoffResult) &&
-            hasRequiredPlayoffGameFields(snapshot.playoffResultJson, requiredGameFields)
+            hasRequiredPlayoffGameFields(snapshot.playoffResultJson, requiredGameFields, requiredPlayerStatFields)
     }
 
     private fun validPlayerBoxScore(value: PlayerBoxScore): Boolean = runCatching {
@@ -523,12 +567,38 @@ object DataExporter {
         }
     }.getOrDefault(false)
 
-    private fun hasRequiredSeasonGameHistoryFields(payload: String?, requiredFields: Set<String>): Boolean {
+    private fun hasRequiredSeasonGameHistoryFields(
+        payload: String?,
+        requiredFields: Set<String>,
+        requiredPlayerStatFields: Set<String>
+    ): Boolean {
         if (payload == null) return true
         return runCatching {
             val history = strictObject(payload).getAsJsonArray("history") ?: return@runCatching false
-            hasRequiredFields(history, requiredFields)
+            history.all { element ->
+                element.isJsonObject && hasRequiredFields(element.asJsonObject, requiredFields) &&
+                    hasRequiredGameStatFields(element.asJsonObject, requiredPlayerStatFields)
+            }
         }.getOrDefault(false)
+    }
+
+    private fun hasRequiredGameStatFields(game: JsonObject, requiredPlayerStatFields: Set<String>): Boolean =
+        listOf("homeStats", "awayStats").all { field ->
+            hasRequiredComplexMapValueFields(game.get(field), requiredPlayerStatFields)
+        }
+
+    private fun hasRequiredComplexMapValueFields(element: JsonElement?, requiredFields: Set<String>): Boolean {
+        if (element == null || element.isJsonNull) return false
+        return when {
+            element.isJsonArray -> element.asJsonArray.all { entry ->
+                entry.isJsonArray && entry.asJsonArray.size() == 2 &&
+                    entry.asJsonArray[1].isJsonObject && hasRequiredFields(entry.asJsonArray[1].asJsonObject, requiredFields)
+            }
+            element.isJsonObject -> element.asJsonObject.entrySet().all { (_, value) ->
+                value.isJsonObject && hasRequiredFields(value.asJsonObject, requiredFields)
+            }
+            else -> false
+        }
     }
 
     private fun hasRequiredSeasonStandingsFields(payload: String?): Boolean {
@@ -614,14 +684,34 @@ object DataExporter {
         )
         return runCatching {
             val array = gson.fromJson(payload, JsonArray::class.java) ?: return@runCatching false
-            array.all { element ->
+            val ids = mutableListOf<String>()
+            check(array.all { element ->
                 if (!element.isJsonObject) return@all false
                 val obj = element.asJsonObject
                 if (!hasRequiredFields(obj, required)) return@all false
+                val id = obj.get("id")
+                if (!id.isJsonPrimitive || !id.asJsonPrimitive.isString || id.asString.isBlank()) return@all false
+                ids += id.asString
                 obj.get("gameDay").asInt >= 0 && obj.get("seasonNumber").asInt >= 1 &&
                     obj.get("userScore").asInt >= 0 && obj.get("opponentScore").asInt >= 0 && obj.get("timestamp").asLong > 0 &&
                     obj.get("isWin").asJsonPrimitive.isBoolean && obj.get("isRead").asJsonPrimitive.isBoolean &&
                     obj.get("isBonusApplied").asJsonPrimitive.isBoolean
+            })
+            ids.size == ids.toSet().size
+        }.getOrDefault(false)
+    }
+
+    private fun hasValidContractFlags(payload: String?): Boolean {
+        if (payload == null) return true
+        return runCatching {
+            val array = gson.fromJson(payload, JsonArray::class.java) ?: return@runCatching false
+            array.all { element ->
+                if (!element.isJsonObject) return@all false
+                val obj = element.asJsonObject
+                listOf("playerOption", "noTrade").all { field ->
+                    val raw = obj.get(field)
+                    raw != null && raw.isJsonPrimitive && raw.asJsonPrimitive.isBoolean
+                }
             }
         }.getOrDefault(false)
     }
@@ -679,7 +769,11 @@ object DataExporter {
         }.getOrDefault(false)
     }
 
-    private fun hasRequiredPlayoffGameFields(payload: String?, requiredGameFields: Set<String>): Boolean {
+    private fun hasRequiredPlayoffGameFields(
+        payload: String?,
+        requiredGameFields: Set<String>,
+        requiredPlayerStatFields: Set<String>
+    ): Boolean {
         if (payload == null) return true
         return runCatching {
             val root = strictObject(payload)
@@ -689,7 +783,10 @@ object DataExporter {
                 val seriesObject = seriesElement.asJsonObject
                 if (!hasRequiredFields(seriesObject, setOf("winner", "games", "roundName", "team1Wins", "team2Wins"))) return@all false
                 val games = seriesObject.getAsJsonArray("games") ?: return@all false
-                hasRequiredFields(games, requiredGameFields)
+                games.all { gameElement ->
+                    gameElement.isJsonObject && hasRequiredFields(gameElement.asJsonObject, requiredGameFields) &&
+                        hasRequiredGameStatFields(gameElement.asJsonObject, requiredPlayerStatFields)
+                }
             }
         }.getOrDefault(false)
     }
