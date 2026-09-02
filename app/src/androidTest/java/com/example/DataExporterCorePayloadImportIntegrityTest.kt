@@ -302,7 +302,17 @@ class DataExporterCorePayloadImportIntegrityTest {
             homeScore = 109,
             awayScore = 104,
             attendance = 15_000,
-            homeStats = emptyMap(),
+            homeStats = mapOf(
+                movedPlayer to GameSimulator.PlayerStats(
+                    points = 12,
+                    rebounds = 4,
+                    assists = 3,
+                    steals = 1,
+                    blocks = 0,
+                    turnovers = 2,
+                    plusMinus = 5
+                )
+            ),
             awayStats = emptyMap(),
             injuries = listOf(GameSimulator.Injury(movedPlayer, 2)),
             narration = "Player later moved to another roster"
@@ -339,6 +349,10 @@ class DataExporterCorePayloadImportIntegrityTest {
             seasonNumber = seasonNumber
         ).apply {
             userTeamName = managed.name
+            standings.values.forEachIndexed { index, record ->
+                record.gamesPlayed = currentDay
+                if (index % 2 == 0) record.wins = currentDay else record.losses = currentDay
+            }
         }
         return GameStateRepository.GameStateSnapshot(
             teamJson = gson.toJson(managed),
