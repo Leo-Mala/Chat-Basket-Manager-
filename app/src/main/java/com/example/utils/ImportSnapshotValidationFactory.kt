@@ -185,7 +185,6 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
             }
         }
 
-        validateGameStatRosterMembership(season)
         validateCompletedPlayoffState(snapshot, season, gson)
 
         snapshot.staffMarketJson?.let { raw ->
@@ -247,19 +246,6 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
         }
     }
 
-    private fun validateGameStatRosterMembership(season: Season) {
-        season.history.forEach { result ->
-            val historicalHomeIds = result.homeTeam.players.map { it.id }.toSet()
-            val historicalAwayIds = result.awayTeam.players.map { it.id }.toSet()
-            if (result.homeStats.keys.any { it.id !in historicalHomeIds }) {
-                throw JsonParseException("Historical home stats contain a player outside the recorded home roster")
-            }
-            if (result.awayStats.keys.any { it.id !in historicalAwayIds }) {
-                throw JsonParseException("Historical away stats contain a player outside the recorded away roster")
-            }
-        }
-    }
-
     private fun validateCompletedPlayoffState(
         snapshot: GameStateRepository.GameStateSnapshot,
         season: Season,
@@ -274,6 +260,13 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
         val playoff = snapshot.playoffResultJson?.let { gson.fromJson(it, Season.PlayoffResult::class.java) }
             ?: return
         if (currentHistory == null) return
+
+        val canonicalTeams = season.teams.associateBy(::persistenceTeamId)
+        listOf(playoff.eastChampion, playoff.westChampion, playoff.nbaChampion).forEach { champion ->
+            if (canonicalTeams[persistenceTeamId(champion)] == null) {
+                throw JsonParseException("Playoff champion is outside the canonical league")
+            }
+        }
         if (currentHistory.champion != playoff.nbaChampion.name) {
             throw JsonParseException("Playoff champion does not match completed season history")
         }
