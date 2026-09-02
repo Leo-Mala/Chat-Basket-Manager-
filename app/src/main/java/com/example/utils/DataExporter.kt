@@ -5,6 +5,7 @@ import com.example.data.repository.GameStateRepository
 import com.example.domain.rules.SavedGameStartupRules
 import com.example.models.*
 import com.google.gson.Gson
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
@@ -53,7 +54,8 @@ object DataExporter {
                 ?: return@runBlocking false
             val season = repository.fromJson(snapshot.seasonJson, Season::class.java)
                 ?: return@runBlocking false
-            if (season.teams.none { it.name == team.name }) return@runBlocking false
+            val managedTeamId = persistenceTeamId(team)
+            if (season.teams.count { persistenceTeamId(it) == managedTeamId } != 1) return@runBlocking false
             val finance = snapshot.financeJson?.let { repository.fromJson(it, Finance::class.java) }
 
             repository.save(snapshot)
@@ -101,6 +103,8 @@ object DataExporter {
                 team.conference.length
                 team.arena.name.length
                 team.arena.city.length
+                check(team.arena.capacity > 0)
+                team.arena.opened
                 check(team.players.all(validPlayer))
                 true
             }.getOrDefault(false)
@@ -127,6 +131,10 @@ object DataExporter {
                 check(value.teams.all(validTeam))
                 val teamNames = value.teams.map { it.name }
                 check(teamNames.size == teamNames.toSet().size)
+                val teamIds = value.teams.map(::persistenceTeamId)
+                check(teamIds.size == teamIds.toSet().size)
+                val playerIds = value.teams.flatMap { it.players }.map { it.id }
+                check(playerIds.size == playerIds.toSet().size)
                 // GameStateRepository.load() requires normalized standings to cover every team.
                 // Reject an import before persistence when that invariant is already broken.
                 check(value.standings.keys == teamNames.toSet())
@@ -137,12 +145,29 @@ object DataExporter {
                     record.totalPointsScored
                     record.totalPointsConceded
                 }
+                val teamIdSet = teamIds.toSet()
+                check(value.history.all { result ->
+                    persistenceTeamId(result.homeTeam) in teamIdSet &&
+                        persistenceTeamId(result.awayTeam) in teamIdSet
+                })
                 true
             }.getOrDefault(false)
         }
         val validTactics: (Any) -> Boolean = { value ->
             value is Tactics && runCatching {
                 value.style.name
+                true
+            }.getOrDefault(false)
+        }
+        val validAwards: (Any) -> Boolean = { value ->
+            value is Awards && runCatching {
+                check(validPlayer(value.mvp))
+                check(validPlayer(value.defensivePlayer))
+                check(validPlayer(value.sixthMan))
+                check(validPlayer(value.rookieOfYear))
+                check(validPlayer(value.mostImproved))
+                value.coachOfYearName.length
+                value.coachOfYearTeam.length
                 true
             }.getOrDefault(false)
         }
@@ -298,11 +323,13 @@ object DataExporter {
             "contractYears"
         )
         val requiredContractFields = setOf("playerId", "salary", "yearsRemaining")
+        val requiredArenaFields = setOf("name", "city", "capacity", "opened")
 
         return validPayload(snapshot.teamJson, NbaTeam::class.java, JsonToken.BEGIN_OBJECT) { value ->
                 value is NbaTeam && validTeam(value)
             } &&
             hasRequiredTeamPlayerFields(snapshot.teamJson, requiredPlayerFields) &&
+            hasRequiredTeamArenaFields(snapshot.teamJson, requiredArenaFields) &&
             validPayload(snapshot.coachJson, Coach::class.java, JsonToken.BEGIN_OBJECT, validCoach) &&
             hasRequiredObjectFields(snapshot.coachJson, requiredCoachFields) &&
             validPayload(snapshot.financeJson, Finance::class.java, JsonToken.BEGIN_OBJECT) &&
@@ -313,8 +340,10 @@ object DataExporter {
             ) &&
             validPayload(snapshot.seasonJson, Season::class.java, JsonToken.BEGIN_OBJECT, validSeason) &&
             hasRequiredSeasonPlayerFields(snapshot.seasonJson, requiredPlayerFields) &&
+            hasRequiredSeasonTeamArenaFields(snapshot.seasonJson, requiredArenaFields) &&
             validPayload(snapshot.historyJson, HistoryManager::class.java, JsonToken.BEGIN_OBJECT) &&
-            validPayload(snapshot.awardsJson, Awards::class.java, JsonToken.BEGIN_OBJECT) &&
+            validPayload(snapshot.awardsJson, Awards::class.java, JsonToken.BEGIN_OBJECT, validAwards) &&
+            hasRequiredAwardsPlayerFields(snapshot.awardsJson, requiredPlayerFields) &&
             validPayload(snapshot.startingFiveJson, listPlayerType, JsonToken.BEGIN_ARRAY, validPlayerList) &&
             hasRequiredArrayObjectFields(snapshot.startingFiveJson, requiredPlayerFields) &&
             validPayload(snapshot.freeAgentsJson, listPlayerType, JsonToken.BEGIN_ARRAY, validPlayerList) &&
@@ -358,22 +387,17 @@ object DataExporter {
         return runCatching {
             val objectPayload = gson.fromJson(payload, JsonObject::class.java)
                 ?: error("JSON payload did not decode to an object")
-            requiredFields.all { field ->
-                objectPayload.has(field) && !objectPayload.get(field).isJsonNull
-            }
+            hasRequiredFields(objectPayload, requiredFields)
         }.getOrDefault(false)
     }
 
     private fun hasRequiredArrayObjectFields(payload: String?, requiredFields: Set<String>): Boolean {
         if (payload == null) return true
         return runCatching {
-            val arrayPayload = gson.fromJson(payload, com.google.gson.JsonArray::class.java)
+            val arrayPayload = gson.fromJson(payload, JsonArray::class.java)
                 ?: error("JSON payload did not decode to an array")
             arrayPayload.all { element ->
-                element.isJsonObject && requiredFields.all { field ->
-                    val objectPayload = element.asJsonObject
-                    objectPayload.has(field) && !objectPayload.get(field).isJsonNull
-                }
+                element.isJsonObject && hasRequiredFields(element.asJsonObject, requiredFields)
             }
         }.getOrDefault(false)
     }
@@ -386,6 +410,17 @@ object DataExporter {
             val players = team.getAsJsonArray("players")
                 ?: error("Team payload did not contain players")
             hasRequiredFields(players, requiredFields)
+        }.getOrDefault(false)
+    }
+
+    private fun hasRequiredTeamArenaFields(payload: String?, requiredFields: Set<String>): Boolean {
+        if (payload == null) return true
+        return runCatching {
+            val team = gson.fromJson(payload, JsonObject::class.java)
+                ?: error("Team payload did not decode to an object")
+            val arena = team.getAsJsonObject("arena")
+                ?: error("Team payload did not contain arena")
+            hasRequiredFields(arena, requiredFields)
         }.getOrDefault(false)
     }
 
@@ -404,15 +439,49 @@ object DataExporter {
         }.getOrDefault(false)
     }
 
+    private fun hasRequiredSeasonTeamArenaFields(payload: String?, requiredFields: Set<String>): Boolean {
+        if (payload == null) return true
+        return runCatching {
+            val season = gson.fromJson(payload, JsonObject::class.java)
+                ?: error("Season payload did not decode to an object")
+            val teams = season.getAsJsonArray("teams")
+                ?: error("Season payload did not contain teams")
+            teams.all { teamElement ->
+                if (!teamElement.isJsonObject) return@all false
+                val arena = teamElement.asJsonObject.getAsJsonObject("arena") ?: return@all false
+                hasRequiredFields(arena, requiredFields)
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun hasRequiredAwardsPlayerFields(payload: String?, requiredFields: Set<String>): Boolean {
+        if (payload == null) return true
+        return runCatching {
+            val awards = gson.fromJson(payload, JsonObject::class.java)
+                ?: error("Awards payload did not decode to an object")
+            listOf("mvp", "defensivePlayer", "sixthMan", "rookieOfYear", "mostImproved").all { field ->
+                val player = awards.getAsJsonObject(field) ?: return@all false
+                hasRequiredFields(player, requiredFields)
+            }
+        }.getOrDefault(false)
+    }
+
     private fun hasRequiredFields(
-        arrayPayload: com.google.gson.JsonArray,
+        arrayPayload: JsonArray,
         requiredFields: Set<String>
     ): Boolean = arrayPayload.all { element ->
-        element.isJsonObject && requiredFields.all { field ->
-            val objectPayload = element.asJsonObject
-            objectPayload.has(field) && !objectPayload.get(field).isJsonNull
-        }
+        element.isJsonObject && hasRequiredFields(element.asJsonObject, requiredFields)
     }
+
+    private fun hasRequiredFields(
+        objectPayload: JsonObject,
+        requiredFields: Set<String>
+    ): Boolean = requiredFields.all { field ->
+        objectPayload.has(field) && !objectPayload.get(field).isJsonNull
+    }
+
+    private fun persistenceTeamId(team: NbaTeam): String =
+        team.abbreviation.ifBlank { team.name.lowercase().replace("[^a-z0-9]".toRegex(), "_") }
 
     private fun validPayload(
         payload: String?,
