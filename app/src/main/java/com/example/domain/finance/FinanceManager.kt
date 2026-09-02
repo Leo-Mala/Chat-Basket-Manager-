@@ -29,39 +29,43 @@ class FinanceManager {
             "Dallas Mavericks", "Denver Nuggets", "Houston Rockets" -> 85
             else -> 70
         }
-        var budget = finance.budget
+        var budget = finance.budget.toLong()
         val expenses = finance.expenses.toMutableList()
-        val gateRevenue = if (isHome) result.attendance * ticketPrice else 0
+        val gateRevenue = if (isHome) safeAmount(result.attendance.toLong() * ticketPrice.toLong()) else 0
         if (gateRevenue > 0) {
-            budget += gateRevenue
+            budget += gateRevenue.toLong()
             expenses += Expense("Receita de Ingressos", gateRevenue, "Dia $day")
         }
-        val sponsorRevenue = finance.sponsors.sumOf { it.amountPerYear } / 82
-        budget += sponsorRevenue
+        val sponsorRevenue = safeAmount(finance.sponsors.sumOf { it.amountPerYear.toLong() } / 82L)
+        budget += sponsorRevenue.toLong()
         expenses += Expense("Receita de Patrocínio", sponsorRevenue, "Dia $day")
 
         // TV rights are credited once at the offseason transition. Do not credit them
         // again game-by-game or the same league revenue is counted twice.
         val annualPayroll = annualPlayerPayroll
             ?: team.players.sumOf { it.calculateSalary().toLong() }
-        val playerSalaries = (annualPayroll / 82L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        budget -= playerSalaries
+        val playerSalaries = safeAmount(annualPayroll / 82L)
+        budget -= playerSalaries.toLong()
         expenses += Expense("Salários dos Jogadores", playerSalaries, "Dia $day")
 
         if (day % 5 == 0) {
             val operations = 250_000
-            budget -= operations
+            budget -= operations.toLong()
             expenses += Expense("Despesas Operacionais", operations, "Dia $day")
         }
 
         var coachSalaryPaid = finance.coachSalaryPaid
         if (!coachSalaryPaid && coach != null) {
             val salary = coach.salary
-            budget -= salary
+            budget -= salary.toLong()
             expenses += Expense("Salário do Técnico", salary, "Temporada")
             coachSalaryPaid = true
         }
-        return finance.copy(budget = budget, expenses = expenses, coachSalaryPaid = coachSalaryPaid)
+        return finance.copy(
+            budget = safeBudget(budget),
+            expenses = expenses,
+            coachSalaryPaid = coachSalaryPaid
+        )
     }
 
     fun signSponsor(finance: Finance, sponsor: Sponsor, day: Int): Finance? {
@@ -69,7 +73,7 @@ class FinanceManager {
         val advance = sponsor.amountPerYear / 4
         return finance.copy(
             sponsors = finance.sponsors + sponsor,
-            budget = finance.budget + advance,
+            budget = safeBudget(finance.budget.toLong() + advance.toLong()),
             expenses = (finance.expenses + Expense("Bônus Assinatura: ${sponsor.name}", advance, "Dia $day")).toMutableList()
         )
     }
@@ -84,7 +88,7 @@ class FinanceManager {
         if (finance.budget < cost) return null
         val newLevel = level + 1
         val expenses = (finance.expenses + Expense("$label (Nv $newLevel)", cost, "Dia $day")).toMutableList()
-        return apply(finance.copy(budget = finance.budget - cost, expenses = expenses), newLevel)
+        return apply(finance.copy(budget = safeBudget(finance.budget.toLong() - cost.toLong()), expenses = expenses), newLevel)
     }
 
     fun upgradeCoach(finance: Finance, coach: Coach, skillType: String, day: Int): Pair<Finance, Coach>? {
@@ -98,6 +102,10 @@ class FinanceManager {
         }
         if (updated == coach) return null
         val expenses = (finance.expenses + Expense("Treino de Técnico ($skillType)", cost, "Dia $day")).toMutableList()
-        return finance.copy(budget = finance.budget - cost, expenses = expenses) to updated
+        return finance.copy(budget = safeBudget(finance.budget.toLong() - cost.toLong()), expenses = expenses) to updated
     }
+
+    private fun safeBudget(value: Long): Int = value.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
+
+    private fun safeAmount(value: Long): Int = value.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 }
