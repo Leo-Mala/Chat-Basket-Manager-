@@ -4,6 +4,7 @@ import com.example.models.Player
 import com.example.simulator.GameSimulator
 import com.example.simulator.applyGameStatsSafely
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerStatAccumulatorTest {
@@ -79,7 +80,7 @@ class PlayerStatAccumulatorTest {
     }
 
     @Test
-    fun boundaryXpReachesMaxInsteadOfWrappingDuringEvolution() {
+    fun boundaryXpRemainsSafeThroughEvolutionAndMaximumPostGameBonus() {
         val player = player().copy(xp = Int.MAX_VALUE - 3)
         val stats = GameSimulator.PlayerStats(
             points = 40,
@@ -93,8 +94,30 @@ class PlayerStatAccumulatorTest {
 
         player.applyGameStatsSafely(stats)
         player.evolveInSeason(stats.points)
+        player.xp += 15
 
         assertEquals(Int.MAX_VALUE, player.xp)
+    }
+
+    @Test
+    fun lossBonusCannotWrapBoundaryXpNegative() {
+        val player = player().copy(xp = Int.MAX_VALUE)
+        val stats = GameSimulator.PlayerStats(
+            points = 0,
+            rebounds = 0,
+            assists = 0,
+            steals = 0,
+            blocks = 0,
+            turnovers = 0,
+            plusMinus = 0
+        )
+
+        player.applyGameStatsSafely(stats)
+        player.evolveInSeason(stats.points)
+        player.xp += 8
+
+        assertTrue(player.xp >= 0)
+        assertTrue(player.xp <= Int.MAX_VALUE)
     }
 
     private fun player() = Player(
