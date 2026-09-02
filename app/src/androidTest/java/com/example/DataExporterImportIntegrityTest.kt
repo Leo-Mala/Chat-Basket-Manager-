@@ -188,6 +188,10 @@ class DataExporterImportIntegrityTest {
             nextPlayerId = nextPlayerId
         ).apply {
             userTeamName = managed.name
+            standings.values.forEachIndexed { index, record ->
+                record.gamesPlayed = currentDay
+                if (index % 2 == 0) record.wins = currentDay else record.losses = currentDay
+            }
         }
         val contracts = teams.flatMap { team ->
             team.players.map { player ->
