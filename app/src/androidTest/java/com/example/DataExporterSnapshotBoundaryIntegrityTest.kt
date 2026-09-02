@@ -137,16 +137,18 @@ class DataExporterSnapshotBoundaryIntegrityTest {
             val home = teams[0]
             val away = teams[1]
             val unrelated = teams[2].players.first()
-            history += GameSimulator.GameResult(
-                homeTeam = home,
-                awayTeam = away,
-                homeScore = 100,
-                awayScore = 90,
-                attendance = 10_000,
-                homeStats = emptyMap(),
-                awayStats = emptyMap(),
-                injuries = listOf(GameSimulator.Injury(unrelated, 3)),
-                narration = "Imported history"
+            history.add(
+                GameSimulator.GameResult(
+                    homeTeam = home,
+                    awayTeam = away,
+                    homeScore = 100,
+                    awayScore = 90,
+                    attendance = 10_000,
+                    homeStats = emptyMap(),
+                    awayStats = emptyMap(),
+                    injuries = listOf(GameSimulator.Injury(unrelated, 3)),
+                    narration = "Imported history"
+                )
             )
         }
 
