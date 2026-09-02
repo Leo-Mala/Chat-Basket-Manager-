@@ -293,9 +293,11 @@ class DataExporterCorePayloadImportIntegrityTest {
         val existing = requireNotNull(repository.load())
         val season = gson.fromJson(existing.seasonJson, Season::class.java)
         val movedPlayer = season.teams[2].players.first()
-        val historicalHome = season.teams[0].copy(players = season.teams[0].players + movedPlayer)
+        // This mirrors GameStateRepository.normalizedSnapshot(): after a trade, historical games
+        // are reconstructed with each team's current roster while stat/injury rows retain the
+        // original player's id independently of current team ownership.
         val historicalResult = GameSimulator.GameResult(
-            homeTeam = historicalHome,
+            homeTeam = season.teams[0],
             awayTeam = season.teams[1],
             homeScore = 109,
             awayScore = 104,
