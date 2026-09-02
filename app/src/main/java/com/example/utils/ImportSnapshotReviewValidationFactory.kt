@@ -2,15 +2,17 @@ package com.example.utils
 
 import com.example.data.repository.GameStateRepository
 import com.example.models.AssistantCoachNotification
-import com.example.models.Awards
 import com.example.models.FacilityType
 import com.example.models.Finance
 import com.example.models.FinanceAdvanced
+import com.example.models.HistoryManager
 import com.example.models.MatchBoxScore
 import com.example.models.NbaTeam
 import com.example.models.Player
 import com.example.models.Season
+import com.example.models.StaffMember
 import com.example.models.TeamFacilities
+import com.example.models.TeamStaff
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -71,6 +73,10 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
                             throw JsonParseException("Imported player leaves no headroom for $field")
                         }
                     }
+                    val age = obj.get("age")
+                    if (age == null || !age.isJsonPrimitive || !age.asJsonPrimitive.isNumber || age.asLong !in 1 until Int.MAX_VALUE.toLong()) {
+                        throw JsonParseException("Imported player age leaves no headroom for offseason progression")
+                    }
                 }
                 obj.entrySet().forEach { (_, child) ->
                     if (child.isJsonPrimitive && child.asJsonPrimitive.isString) {
@@ -95,11 +101,14 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
         validateSeasonProgress(season)
         validateCanonicalGameParticipants(season)
         validateSeasonNumberHeadroom(season)
+        validatePlayoffCompletionState(snapshot, season, gson)
         validateFinance(snapshot, season, gson)
         validateAdvancedFinance(snapshot, gson)
         validateNotifications(snapshot, gson)
         validateFacilities(snapshot, gson)
         validateBoxScore(snapshot, gson)
+        validateStaffIdentityAndSalary(snapshot, gson)
+        validateStartingFive(snapshot, season, gson)
     }
 
     private fun validateSeasonProgress(season: Season) {
@@ -120,17 +129,29 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
                 ?: throw JsonParseException("Historical home team is not canonical")
             val away = canonicalTeams[persistenceTeamId(result.awayTeam)]
                 ?: throw JsonParseException("Historical away team is not canonical")
-            val homeIds = home.players.map(Player::id).toSet()
-            val awayIds = away.players.map(Player::id).toSet()
-            if (result.homeStats.keys.any { it.id !in homeIds }) {
-                throw JsonParseException("Historical home stats reference a player outside the canonical home roster")
+            val homePlayers = home.players.associateBy(Player::id)
+            val awayPlayers = away.players.associateBy(Player::id)
+            if (result.homeStats.keys.any { historical ->
+                    val canonical = homePlayers[historical.id]
+                    canonical == null || historical != canonical
+                }
+            ) {
+                throw JsonParseException("Historical home stats conflict with the canonical home roster")
             }
-            if (result.awayStats.keys.any { it.id !in awayIds }) {
-                throw JsonParseException("Historical away stats reference a player outside the canonical away roster")
+            if (result.awayStats.keys.any { historical ->
+                    val canonical = awayPlayers[historical.id]
+                    canonical == null || historical != canonical
+                }
+            ) {
+                throw JsonParseException("Historical away stats conflict with the canonical away roster")
             }
-            val participantIds = homeIds + awayIds
-            if (result.injuries.any { it.player.id !in participantIds }) {
-                throw JsonParseException("Historical injury references a player outside canonical participants")
+            val participantPlayers = homePlayers + awayPlayers
+            result.injuries.forEach { injury ->
+                val canonical = participantPlayers[injury.player.id]
+                    ?: throw JsonParseException("Historical injury references a player outside canonical participants")
+                if (injury.player != canonical) {
+                    throw JsonParseException("Historical injury player conflicts with canonical persisted player state")
+                }
             }
         }
     }
@@ -138,6 +159,20 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
     private fun validateSeasonNumberHeadroom(season: Season) {
         if (season.seasonNumber >= Int.MAX_VALUE) {
             throw JsonParseException("seasonNumber leaves no headroom for the next season")
+        }
+    }
+
+    private fun validatePlayoffCompletionState(
+        snapshot: GameStateRepository.GameStateSnapshot,
+        season: Season,
+        gson: Gson
+    ) {
+        val history = snapshot.historyJson?.let { gson.fromJson(it, HistoryManager::class.java) }
+            ?: throw JsonParseException("historyJson is required")
+        val currentSeasonCompleted = history.seasons.any { it.seasonNumber == season.seasonNumber }
+        val hasPlayoffResult = snapshot.playoffResultJson != null
+        if (currentSeasonCompleted != hasPlayoffResult) {
+            throw JsonParseException("Current-season completion and playoffResultJson must agree")
         }
     }
 
@@ -150,6 +185,11 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
             finance.scoutingLevel !in 1..MAX_FINANCE_UPGRADE_LEVEL
         ) {
             throw JsonParseException("Finance upgrade levels must be within the supported 1..5 range")
+        }
+        finance.sponsors.forEach { sponsor ->
+            if (sponsor.yearsRemaining <= 0) {
+                throw JsonParseException("Active finance sponsors must have remaining contract term")
+            }
         }
 
         val managedTeam = snapshot.teamJson?.let { gson.fromJson(it, NbaTeam::class.java) }
@@ -167,6 +207,9 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
         val gateRevenue = safeMultiply(expandedCapacity, ticketPrice.toLong(), "gate revenue")
         val annualSponsorRevenue = finance.sponsors.fold(0L) { acc, sponsor ->
             safeAdd(acc, sponsor.amountPerYear.toLong(), "sponsor revenue")
+        }
+        if (annualSponsorRevenue > Int.MAX_VALUE.toLong()) {
+            throw JsonParseException("Imported sponsor revenue exceeds the supported aggregate range")
         }
         val sponsorPerGame = annualSponsorRevenue / MAX_REGULAR_SEASON_GAMES
         val maxNextCredit = safeAdd(gateRevenue, sponsorPerGame, "next-game credit")
@@ -201,9 +244,18 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
             advanced.expenses.operationalExpenses,
             advanced.expenses.luxuryTaxPaid
         )
-        val total = expenseParts.fold(0L) { acc, value -> safeAdd(acc, value.toLong(), "advanced-finance expenses") }
-        if (total > Int.MAX_VALUE.toLong()) {
+        val expenseTotal = expenseParts.fold(0L) { acc, value -> safeAdd(acc, value.toLong(), "advanced-finance expenses") }
+        if (expenseTotal > Int.MAX_VALUE.toLong()) {
             throw JsonParseException("Imported advanced-finance expenses exceed the supported aggregate range")
+        }
+        val sponsorshipTotal = advanced.activeSponsorships.fold(0L) { acc, sponsorship ->
+            if (sponsorship.yearsRemaining <= 0) {
+                throw JsonParseException("Active sponsorships must have remaining contract term")
+            }
+            safeAdd(acc, sponsorship.annualAmount.toLong(), "active sponsorship revenue")
+        }
+        if (sponsorshipTotal > Int.MAX_VALUE.toLong()) {
+            throw JsonParseException("Imported active sponsorship revenue exceeds the supported aggregate range")
         }
     }
 
@@ -256,6 +308,47 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
             homePlayerTotal != box.homeScore || awayPlayerTotal != box.awayScore
         ) {
             throw JsonParseException("Imported box-score totals do not reconcile with the recorded score")
+        }
+    }
+
+    private fun validateStaffIdentityAndSalary(snapshot: GameStateRepository.GameStateSnapshot, gson: Gson) {
+        val staff = snapshot.teamStaffJson?.let { gson.fromJson(it, TeamStaff::class.java) } ?: return
+        val employed = buildList<StaffMember> {
+            staff.headCoach?.let(::add)
+            addAll(staff.assistants)
+            staff.strengthCoach?.let(::add)
+            staff.scout?.let(::add)
+            staff.teamDoctor?.let(::add)
+            addAll(staff.executives)
+        }
+        val employedIds = employed.map(StaffMember::id).toSet()
+        val salaryTotal = employed.fold(0L) { acc, member -> safeAdd(acc, member.salary.toLong(), "team staff salaries") }
+        if (salaryTotal > Int.MAX_VALUE.toLong()) {
+            throw JsonParseException("Imported team staff salaries exceed the supported aggregate range")
+        }
+        snapshot.staffMarketJson?.let { raw ->
+            val type = object : TypeToken<List<StaffMember>>() {}.type
+            val market: List<StaffMember> = gson.fromJson(raw, type)
+            if (market.any { it.id in employedIds }) {
+                throw JsonParseException("Staff-market id collides with currently employed staff")
+            }
+        }
+    }
+
+    private fun validateStartingFive(snapshot: GameStateRepository.GameStateSnapshot, season: Season, gson: Gson) {
+        val raw = snapshot.startingFiveJson ?: throw JsonParseException("startingFiveJson is required")
+        val type = object : TypeToken<List<Player>>() {}.type
+        val startingFive: List<Player> = gson.fromJson(raw, type)
+        val managedTeam = snapshot.teamJson?.let { gson.fromJson(it, NbaTeam::class.java) }
+            ?: season.teams.singleOrNull { it.name == season.userTeamName }
+            ?: throw JsonParseException("Managed team could not be resolved")
+        val canonical = managedTeam.players.associateBy(Player::id)
+        startingFive.forEach { player ->
+            val persisted = canonical[player.id]
+                ?: throw JsonParseException("Starting-five player is outside the managed roster")
+            if (persisted != player) {
+                throw JsonParseException("Starting-five player conflicts with canonical managed-roster state")
+            }
         }
     }
 
