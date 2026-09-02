@@ -7,6 +7,7 @@ import com.example.data.NbaDataGenerator
 import com.example.data.local.BasketDatabase
 import com.example.data.repository.GameStateRepository
 import com.example.models.*
+import com.example.simulator.GameSimulator
 import com.example.utils.AutoSaveManager
 import com.example.utils.DataExporter
 import com.example.utils.SaveSlotManager
@@ -51,7 +52,7 @@ class DataExporterImportIntegrityTest {
 
     @Test
     fun validImportUpdatesActiveSlotMetadata() = runBlocking {
-        val importedBoxScore = validBoxScoreJson("imported-box-score")
+        val importedBoxScore = validBoxScoreJson("imported-box-score", 23)
         val snapshot = snapshot(4, 23, 145_000_000, 3, importedBoxScore)
         val file = writeSnapshot("valid-import.json", snapshot)
 
@@ -183,7 +184,7 @@ class DataExporterImportIntegrityTest {
         val season = Season(
             teams = teams,
             currentDay = currentDay,
-            gamesPlayed = currentDay,
+            gamesPlayed = currentDay * (teams.size / 2),
             seasonNumber = seasonNumber,
             nextPlayerId = nextPlayerId
         ).apply {
@@ -191,6 +192,24 @@ class DataExporterImportIntegrityTest {
             standings.values.forEachIndexed { index, record ->
                 record.gamesPlayed = currentDay
                 if (index % 2 == 0) record.wins = currentDay else record.losses = currentDay
+                record.totalPointsScored = currentDay * 95
+                record.totalPointsConceded = currentDay * 95
+            }
+            repeat(currentDay) { dayIndex ->
+                val opponent = teams[1 + (dayIndex % (teams.size - 1))]
+                val homePlayer = managed.players.first()
+                val awayPlayer = opponent.players.first()
+                history += GameSimulator.GameResult(
+                    homeTeam = managed,
+                    awayTeam = opponent,
+                    homeScore = 100,
+                    awayScore = 90,
+                    attendance = 15_000,
+                    homeStats = mapOf(homePlayer to GameSimulator.PlayerStats(100, 0, 0, 0, 0, 0, 10)),
+                    awayStats = mapOf(awayPlayer to GameSimulator.PlayerStats(90, 0, 0, 0, 0, 0, -10)),
+                    injuries = emptyList(),
+                    narration = "Import fixture day ${dayIndex + 1}"
+                )
             }
         }
         val contracts = teams.flatMap { team ->
@@ -229,30 +248,37 @@ class DataExporterImportIntegrityTest {
         )
     }
 
-    private fun validBoxScoreJson(matchId: String): String = gson.toJson(
-        MatchBoxScore(
-            matchId = matchId,
-            dateString = "2026-09-01",
-            homeTeamName = "Home",
-            awayTeamName = "Away",
-            homeScore = 0,
-            awayScore = 0,
-            homeQuarterScores = listOf(0, 0, 0, 0),
-            awayQuarterScores = listOf(0, 0, 0, 0),
-            homePlayers = emptyList(),
-            awayPlayers = emptyList(),
-            homeTeamTotals = TeamBoxScore(
-                teamName = "Home", points = 0, rebounds = 0, assists = 0, steals = 0, blocks = 0,
-                turnovers = 0, fouls = 0, fgMade = 0, fgAttempted = 0, threeMade = 0,
-                threeAttempted = 0, ftMade = 0, ftAttempted = 0
-            ),
-            awayTeamTotals = TeamBoxScore(
-                teamName = "Away", points = 0, rebounds = 0, assists = 0, steals = 0, blocks = 0,
-                turnovers = 0, fouls = 0, fgMade = 0, fgAttempted = 0, threeMade = 0,
-                threeAttempted = 0, ftMade = 0, ftAttempted = 0
+    private fun validBoxScoreJson(matchId: String, currentDay: Int = 11): String {
+        val teams = NbaDataGenerator.getAllTeams()
+        val home = teams.first()
+        val away = teams[1 + ((currentDay - 1) % (teams.size - 1))]
+        val homePlayer = home.players.first()
+        val awayPlayer = away.players.first()
+        return gson.toJson(
+            MatchBoxScore(
+                matchId = matchId,
+                dateString = "2026-09-01",
+                homeTeamName = home.name,
+                awayTeamName = away.name,
+                homeScore = 100,
+                awayScore = 90,
+                homeQuarterScores = listOf(25, 25, 25, 25),
+                awayQuarterScores = listOf(23, 23, 22, 22),
+                homePlayers = listOf(PlayerBoxScore(homePlayer.id, homePlayer.name, homePlayer.position, 48, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10)),
+                awayPlayers = listOf(PlayerBoxScore(awayPlayer.id, awayPlayer.name, awayPlayer.position, 48, 90, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -10)),
+                homeTeamTotals = TeamBoxScore(
+                    teamName = home.name, points = 100, rebounds = 0, assists = 0, steals = 0, blocks = 0,
+                    turnovers = 0, fouls = 0, fgMade = 0, fgAttempted = 0, threeMade = 0,
+                    threeAttempted = 0, ftMade = 0, ftAttempted = 0
+                ),
+                awayTeamTotals = TeamBoxScore(
+                    teamName = away.name, points = 90, rebounds = 0, assists = 0, steals = 0, blocks = 0,
+                    turnovers = 0, fouls = 0, fgMade = 0, fgAttempted = 0, threeMade = 0,
+                    threeAttempted = 0, ftMade = 0, ftAttempted = 0
+                )
             )
         )
-    )
+    }
 
     private fun writeSnapshot(name: String, snapshot: GameStateRepository.GameStateSnapshot): File =
         File(context.cacheDir, name).apply { writeText(exportGson.toJson(snapshot)) }
