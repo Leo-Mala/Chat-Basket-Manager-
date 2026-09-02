@@ -19,6 +19,7 @@ object AutoSaveManager {
         .enableComplexMapKeySerialization()
         .registerTypeAdapter(StaffMember::class.java, StaffMemberJsonAdapter())
         .registerTypeAdapterFactory(ImportSnapshotValidationFactory())
+        .registerTypeAdapterFactory(ImportSnapshotBoundaryValidationFactory())
         .create()
 
     fun init(context: Context) {
