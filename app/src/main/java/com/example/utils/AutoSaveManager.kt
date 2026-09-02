@@ -18,6 +18,7 @@ object AutoSaveManager {
     val gson: Gson = GsonBuilder()
         .enableComplexMapKeySerialization()
         .registerTypeAdapter(StaffMember::class.java, StaffMemberJsonAdapter())
+        .registerTypeAdapterFactory(ImportSnapshotValidationFactory())
         .create()
 
     fun init(context: Context) {
