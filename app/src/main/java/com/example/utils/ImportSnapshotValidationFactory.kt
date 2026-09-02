@@ -97,6 +97,7 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
         val season = snapshot.seasonJson?.let { gson.fromJson(it, Season::class.java) }
             ?: throw JsonParseException("seasonJson is required")
         validateSeasonAllocator(season)
+        validateSeasonGameCounter(season)
 
         val playerType = object : TypeToken<List<Player>>() {}.type
         val freeAgents: List<Player> = snapshot.freeAgentsJson?.let { gson.fromJson(it, playerType) }
@@ -158,8 +159,8 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
             }
         }
 
-        val requiredAllocatorHeadroom = season.teams.size.coerceAtLeast(1) * 12
-        if (maxPersistedPlayerId > Int.MAX_VALUE - requiredAllocatorHeadroom) {
+        val requiredAllocatorHeadroom = requiredPlayerIdHeadroom(season)
+        if (maxPersistedPlayerId.toLong() > Int.MAX_VALUE.toLong() - requiredAllocatorHeadroom) {
             throw JsonParseException("Persisted player ids leave no safe allocator headroom")
         }
         if (season.nextPlayerId <= maxPersistedPlayerId) {
@@ -222,12 +223,27 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
     }
 
     private fun validateSeasonAllocator(season: Season) {
-        // advanceSeason can need up to 12 replacement players for each persisted team.
-        // Reserve a full supported replenishment pass so a successfully imported career cannot
-        // immediately overflow Math.addExact while generating players.
-        val maxSupportedBatch = season.teams.size.coerceAtLeast(1) * 12
-        if (season.nextPlayerId <= 0 || season.nextPlayerId > Int.MAX_VALUE - maxSupportedBatch) {
+        // The legacy replenishment path can allocate 12 players per team. A season transition may
+        // also be preceded by the six-player user draft class and followed by the six-player free-
+        // agent batch. Reserve the entire existing chain so an accepted import cannot overflow on
+        // its next supported lifecycle operation.
+        val requiredHeadroom = requiredPlayerIdHeadroom(season)
+        if (season.nextPlayerId <= 0 || season.nextPlayerId.toLong() > Int.MAX_VALUE.toLong() - requiredHeadroom) {
             throw JsonParseException("nextPlayerId cannot accommodate the next player-generation batch")
+        }
+    }
+
+    private fun requiredPlayerIdHeadroom(season: Season): Long =
+        season.teams.size.coerceAtLeast(1).toLong() * 12L + 12L
+
+    private fun validateSeasonGameCounter(season: Season) {
+        if (season.gamesPlayed < 0) {
+            throw JsonParseException("season.gamesPlayed must be non-negative")
+        }
+        val gamesPerDay = season.teams.size / 2L
+        val maximumPlayedThroughCurrentDay = season.currentDay.toLong() * gamesPerDay
+        if (season.gamesPlayed.toLong() > maximumPlayedThroughCurrentDay) {
+            throw JsonParseException("season.gamesPlayed exceeds the schedule progress for currentDay")
         }
     }
 
@@ -251,9 +267,25 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
     ) {
         val history = snapshot.historyJson?.let { gson.fromJson(it, HistoryManager::class.java) }
             ?: return
-        val currentSeasonCompleted = history.seasons.any { it.seasonNumber == season.seasonNumber }
-        if (currentSeasonCompleted && snapshot.playoffResultJson == null) {
+        val currentHistory = history.seasons.singleOrNull { it.seasonNumber == season.seasonNumber }
+        if (currentHistory != null && snapshot.playoffResultJson == null) {
             throw JsonParseException("Completed current season requires playoffResultJson")
+        }
+        val playoff = snapshot.playoffResultJson?.let { gson.fromJson(it, Season.PlayoffResult::class.java) }
+            ?: return
+        if (currentHistory == null) return
+        if (currentHistory.champion != playoff.nbaChampion.name) {
+            throw JsonParseException("Playoff champion does not match completed season history")
+        }
+        val finals = playoff.seriesResults.singleOrNull { series ->
+            series.roundName.equals("Finais da NBA", true) ||
+                series.roundName.equals("Grande Final", true) ||
+                series.roundName.equals("FINALS", true)
+        } ?: throw JsonParseException("Completed playoff result must contain exactly one finals series")
+        val finalists = setOfNotNull(finals.team1?.name, finals.team2?.name)
+        val conferenceChampions = setOf(playoff.eastChampion.name, playoff.westChampion.name)
+        if (finalists != conferenceChampions || finals.winner.name != playoff.nbaChampion.name) {
+            throw JsonParseException("Playoff finals do not reconcile with conference and NBA champions")
         }
     }
 
