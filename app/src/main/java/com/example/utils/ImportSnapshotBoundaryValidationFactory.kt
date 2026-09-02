@@ -5,6 +5,7 @@ import com.example.models.Finance
 import com.example.models.FinanceAdvanced
 import com.example.models.Player
 import com.example.models.Season
+import com.example.models.TeamFacilities
 import com.example.models.TeamStaff
 import com.google.gson.Gson
 import com.google.gson.JsonParseException
@@ -42,6 +43,8 @@ class ImportSnapshotBoundaryValidationFactory : TypeAdapterFactory {
         validateStandings(season)
         validateArenaRevenueBounds(snapshot, season, gson)
         validateHistoricalStatIdentity(season)
+        validateHistoricalInjuryParticipants(season)
+        validatePlayerInjuryState(snapshot, season, gson)
 
         snapshot.financeJson?.let { raw ->
             val finance = gson.fromJson(raw, Finance::class.java)
@@ -49,10 +52,22 @@ class ImportSnapshotBoundaryValidationFactory : TypeAdapterFactory {
             validateFinance(finance)
         }
 
+        snapshot.financeAdvancedJson?.let { raw ->
+            val financeAdvanced = gson.fromJson(raw, FinanceAdvanced::class.java)
+                ?: throw JsonParseException("financeAdvancedJson could not be decoded")
+            validateAdvancedFinance(financeAdvanced)
+        }
+
         snapshot.teamStaffJson?.let { raw ->
             val staff = gson.fromJson(raw, TeamStaff::class.java)
                 ?: throw JsonParseException("teamStaffJson could not be decoded")
             validateTeamStaffIdentity(staff)
+        }
+
+        snapshot.facilitiesJson?.let { raw ->
+            val facilities = gson.fromJson(raw, TeamFacilities::class.java)
+                ?: throw JsonParseException("facilitiesJson could not be decoded")
+            validateFacilities(facilities)
         }
     }
 
@@ -71,6 +86,12 @@ class ImportSnapshotBoundaryValidationFactory : TypeAdapterFactory {
             }
             if (decidedGames != record.gamesPlayed) {
                 throw JsonParseException("Standings record is inconsistent for $teamName")
+            }
+            if (record.gamesPlayed !in 0..MAX_REGULAR_SEASON_GAMES ||
+                record.wins !in 0..MAX_REGULAR_SEASON_GAMES ||
+                record.losses !in 0..MAX_REGULAR_SEASON_GAMES
+            ) {
+                throw JsonParseException("Standings record exceeds the supported season range for $teamName")
             }
         }
     }
@@ -94,6 +115,26 @@ class ImportSnapshotBoundaryValidationFactory : TypeAdapterFactory {
         }
     }
 
+    private fun validateAdvancedFinance(finance: FinanceAdvanced) {
+        val revenueParts = listOf(
+            finance.revenues.ticketRevenue,
+            finance.revenues.sponsorshipRevenue,
+            finance.revenues.merchandiseRevenue,
+            finance.revenues.broadcastingRevenue,
+            finance.revenues.playoffRevenue
+        )
+        val total = revenueParts.fold(0L) { acc, value ->
+            try {
+                Math.addExact(acc, value.toLong())
+            } catch (_: ArithmeticException) {
+                throw JsonParseException("Imported advanced-finance revenue overflows Long")
+            }
+        }
+        if (total > Int.MAX_VALUE) {
+            throw JsonParseException("Imported advanced-finance revenue exceeds the supported aggregate range")
+        }
+    }
+
     private fun validateTeamStaffIdentity(staff: TeamStaff) {
         val ids = buildList {
             staff.headCoach?.let { add(it.id) }
@@ -105,6 +146,28 @@ class ImportSnapshotBoundaryValidationFactory : TypeAdapterFactory {
         }
         if (ids.size != ids.toSet().size) {
             throw JsonParseException("Imported team staff contains duplicate ids")
+        }
+    }
+
+    private fun validateFacilities(facilities: TeamFacilities) {
+        listOf(facilities.arena, facilities.training, facilities.medical, facilities.scouting).forEach { facility ->
+            if (facility.level !in 1..MAX_FACILITY_LEVEL || facility.maxLevel !in 1..MAX_FACILITY_LEVEL) {
+                throw JsonParseException("Imported facility level exceeds the supported 1..$MAX_FACILITY_LEVEL range")
+            }
+            if (facility.level > facility.maxLevel) {
+                throw JsonParseException("Imported facility level exceeds its maxLevel")
+            }
+            val upgradeCost = try {
+                Math.multiplyExact(
+                    Math.multiplyExact(facility.baseUpgradeCost.toLong(), facility.level.toLong()),
+                    facility.level.toLong()
+                )
+            } catch (_: ArithmeticException) {
+                throw JsonParseException("Imported facility upgrade cost overflows")
+            }
+            if (upgradeCost > Int.MAX_VALUE) {
+                throw JsonParseException("Imported facility upgrade cost exceeds the supported Int range")
+            }
         }
     }
 
@@ -144,5 +207,36 @@ class ImportSnapshotBoundaryValidationFactory : TypeAdapterFactory {
                 }
             }
         }
+    }
+
+    private fun validateHistoricalInjuryParticipants(season: Season) {
+        season.history.forEach { result ->
+            val participantIds = (result.homeTeam.players + result.awayTeam.players).map(Player::id).toSet()
+            if (result.injuries.any { it.player.id !in participantIds }) {
+                throw JsonParseException("Historical injury references a player outside the recorded participants")
+            }
+        }
+    }
+
+    private fun validatePlayerInjuryState(
+        snapshot: GameStateRepository.GameStateSnapshot,
+        season: Season,
+        gson: Gson
+    ) {
+        val players = mutableListOf<Player>()
+        players += season.teams.flatMap { it.players }
+        val playerListType = object : TypeToken<List<Player>>() {}.type
+        snapshot.freeAgentsJson?.let { raw -> players += gson.fromJson<List<Player>>(raw, playerListType) }
+        snapshot.draftRookiesJson?.let { raw -> players += gson.fromJson<List<Player>>(raw, playerListType) }
+        players.forEach { player ->
+            if (player.injured != (player.injuryDays > 0)) {
+                throw JsonParseException("Player ${player.id} has inconsistent injury state")
+            }
+        }
+    }
+
+    private companion object {
+        const val MAX_REGULAR_SEASON_GAMES = 82
+        const val MAX_FACILITY_LEVEL = 10
     }
 }
