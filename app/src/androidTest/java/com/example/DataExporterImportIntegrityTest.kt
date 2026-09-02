@@ -231,19 +231,19 @@ class DataExporterImportIntegrityTest {
             dateString = "2026-09-01",
             homeTeamName = "Home",
             awayTeamName = "Away",
-            homeScore = 100,
-            awayScore = 90,
-            homeQuarterScores = listOf(25, 25, 25, 25),
-            awayQuarterScores = listOf(20, 25, 20, 25),
+            homeScore = 0,
+            awayScore = 0,
+            homeQuarterScores = listOf(0, 0, 0, 0),
+            awayQuarterScores = listOf(0, 0, 0, 0),
             homePlayers = emptyList(),
             awayPlayers = emptyList(),
             homeTeamTotals = TeamBoxScore(
-                teamName = "Home", points = 100, rebounds = 0, assists = 0, steals = 0, blocks = 0,
+                teamName = "Home", points = 0, rebounds = 0, assists = 0, steals = 0, blocks = 0,
                 turnovers = 0, fouls = 0, fgMade = 0, fgAttempted = 0, threeMade = 0,
                 threeAttempted = 0, ftMade = 0, ftAttempted = 0
             ),
             awayTeamTotals = TeamBoxScore(
-                teamName = "Away", points = 90, rebounds = 0, assists = 0, steals = 0, blocks = 0,
+                teamName = "Away", points = 0, rebounds = 0, assists = 0, steals = 0, blocks = 0,
                 turnovers = 0, fouls = 0, fgMade = 0, fgAttempted = 0, threeMade = 0,
                 threeAttempted = 0, ftMade = 0, ftAttempted = 0
             )
