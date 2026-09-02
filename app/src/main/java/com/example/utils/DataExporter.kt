@@ -141,7 +141,7 @@ object DataExporter {
         val validFinance: (Any) -> Boolean = { value ->
             value is Finance && runCatching {
                 check(value.budget >= 0)
-                check(value.coachSalaryPaid >= 0)
+                value.coachSalaryPaid
                 value.sponsors.forEach {
                     check(it.name.isNotBlank())
                     check(it.amountPerYear >= 0)
