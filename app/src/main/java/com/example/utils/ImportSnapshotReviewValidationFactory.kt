@@ -2,6 +2,7 @@ package com.example.utils
 
 import com.example.data.repository.GameStateRepository
 import com.example.models.AssistantCoachNotification
+import com.example.models.Awards
 import com.example.models.FacilityType
 import com.example.models.Finance
 import com.example.models.FinanceAdvanced
@@ -99,7 +100,7 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
         val season = snapshot.seasonJson?.let { gson.fromJson(it, Season::class.java) }
             ?: throw JsonParseException("seasonJson is required")
         validateSeasonProgress(season)
-        validateCanonicalGameParticipants(season)
+        validateCanonicalGameParticipants(snapshot, season, gson)
         validateSeasonNumberHeadroom(season)
         validatePlayoffCompletionState(snapshot, season, gson)
         validateFinance(snapshot, season, gson)
@@ -122,9 +123,36 @@ class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
         }
     }
 
-    private fun validateCanonicalGameParticipants(season: Season) {
+    private fun validateCanonicalGameParticipants(
+        snapshot: GameStateRepository.GameStateSnapshot,
+        season: Season,
+        gson: Gson
+    ) {
         val canonicalTeams = season.teams.associateBy(::persistenceTeamId)
-        val canonicalPlayers = season.teams.flatMap { it.players }.associateBy(Player::id)
+        val canonicalPlayers = LinkedHashMap<Int, Player>()
+        season.teams.flatMap { it.players }.forEach { canonicalPlayers[it.id] = it }
+
+        val playerListType = object : TypeToken<List<Player>>() {}.type
+        snapshot.freeAgentsJson?.let { raw ->
+            val players: List<Player> = gson.fromJson(raw, playerListType)
+            players.forEach { canonicalPlayers[it.id] = it }
+        }
+        snapshot.draftRookiesJson?.let { raw ->
+            val players: List<Player> = gson.fromJson(raw, playerListType)
+            players.forEach { canonicalPlayers[it.id] = it }
+        }
+        snapshot.awardsJson?.let { raw ->
+            val awards = gson.fromJson(raw, Awards::class.java)
+                ?: throw JsonParseException("awardsJson could not be decoded")
+            listOf(
+                awards.mvp,
+                awards.defensivePlayer,
+                awards.sixthMan,
+                awards.rookieOfYear,
+                awards.mostImproved
+            ).forEach { player -> canonicalPlayers.putIfAbsent(player.id, player) }
+        }
+
         season.history.forEach { result ->
             if (canonicalTeams[persistenceTeamId(result.homeTeam)] == null) {
                 throw JsonParseException("Historical home team is not canonical")
