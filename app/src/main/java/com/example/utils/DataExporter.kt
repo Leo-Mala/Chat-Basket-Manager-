@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.data.repository.GameStateRepository
 import com.example.domain.rules.SavedGameStartupRules
 import com.example.models.*
+import com.example.simulator.RotationRules
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
@@ -53,6 +54,10 @@ object DataExporter {
                 ?: return@runBlocking false
             val managedTeamId = persistenceTeamId(team)
             if (season.teams.count { persistenceTeamId(it) == managedTeamId } != 1) return@runBlocking false
+            val seasonManagedTeamId = season.userTeamName?.let { userTeamName ->
+                season.teams.singleOrNull { it.name == userTeamName }?.let(::persistenceTeamId)
+            }
+            if (season.userTeamName != null && seasonManagedTeamId != managedTeamId) return@runBlocking false
             val finance = snapshot.financeJson?.let { repository.fromJson(it, Finance::class.java) }
 
             repository.save(snapshot)
@@ -111,6 +116,7 @@ object DataExporter {
                 team.arena.city.length
                 check(team.arena.capacity > 0)
                 team.arena.opened
+                check(team.players.size >= RotationRules.MIN_PLAYERS_FOR_GAME)
                 check(team.players.all(validPlayer))
                 true
             }.getOrDefault(false)
@@ -123,6 +129,22 @@ object DataExporter {
                     value.motivationalSkill in 0..100 &&
                     value.salary >= 0 &&
                     value.contractYears >= 0
+            }.getOrDefault(false)
+        }
+        val validFinance: (Any) -> Boolean = { value ->
+            value is Finance && runCatching {
+                value.sponsors.forEach {
+                    it.name.length
+                    check(it.yearsRemaining >= 0)
+                }
+                value.expenses.forEach {
+                    it.description.length
+                    it.date.length
+                }
+                check(value.arenaSeatsLevel >= 1)
+                check(value.medicalStaffLevel >= 1)
+                check(value.scoutingLevel >= 1)
+                true
             }.getOrDefault(false)
         }
         val validContracts: (Any) -> Boolean = { value ->
@@ -151,17 +173,23 @@ object DataExporter {
                 value.standings.values.forEach {
                     it.wins; it.losses; it.gamesPlayed; it.totalPointsScored; it.totalPointsConceded
                 }
-                val teamIdSet = teamIds.toSet()
-                check(value.history.all {
-                    persistenceTeamId(it.homeTeam) in teamIdSet && persistenceTeamId(it.awayTeam) in teamIdSet
+                val teamsById = value.teams.associateBy(::persistenceTeamId)
+                check(value.history.all { result ->
+                    val homeTeam = teamsById[persistenceTeamId(result.homeTeam)] ?: return@all false
+                    val awayTeam = teamsById[persistenceTeamId(result.awayTeam)] ?: return@all false
+                    val homeRosterIds = homeTeam.players.map { it.id }.toSet()
+                    val awayRosterIds = awayTeam.players.map { it.id }.toSet()
+                    result.homeStats.keys.all { it.id in homeRosterIds } &&
+                        result.awayStats.keys.all { it.id in awayRosterIds } &&
+                        result.injuries.all { it.player.id in homeRosterIds || it.player.id in awayRosterIds }
                 })
                 true
             }.getOrDefault(false)
         }
         val validHistory: (Any) -> Boolean = { value ->
             value is HistoryManager && runCatching {
-                value.seasons.size
-                value.seasons.all { item ->
+                val seasonNumbers = value.seasons.map { it.seasonNumber }
+                seasonNumbers.size == seasonNumbers.toSet().size && value.seasons.all { item ->
                     item.seasonNumber >= 1 &&
                         item.champion.isNotBlank() &&
                         item.finalScore.isNotBlank() &&
@@ -266,6 +294,7 @@ object DataExporter {
 
         val requiredPlayerFields = setOf("id", "name", "position", "overall", "shooting", "defense", "rebound", "passing", "athleticism", "age")
         val requiredCoachFields = setOf("id", "name", "offensiveSkill", "defensiveSkill", "motivationalSkill", "salary", "contractYears")
+        val requiredFinanceFields = setOf("budget", "sponsors", "expenses", "coachSalaryPaid", "arenaSeatsLevel", "medicalStaffLevel", "scoutingLevel")
         val requiredContractFields = setOf("playerId", "salary", "yearsRemaining")
         val requiredArenaFields = setOf("name", "city", "capacity", "opened")
         val requiredSeasonFields = setOf("teams", "currentDay", "gamesPlayed", "seasonNumber", "currentMonth", "currentYear", "nextPlayerId", "standings", "history")
@@ -276,7 +305,9 @@ object DataExporter {
             hasRequiredTeamArenaFields(snapshot.teamJson, requiredArenaFields) &&
             validPayload(snapshot.coachJson, Coach::class.java, JsonToken.BEGIN_OBJECT, validCoach) &&
             hasRequiredObjectFields(snapshot.coachJson, requiredCoachFields) &&
-            validPayload(snapshot.financeJson, Finance::class.java, JsonToken.BEGIN_OBJECT) &&
+            snapshot.financeJson != null &&
+            validPayload(snapshot.financeJson, Finance::class.java, JsonToken.BEGIN_OBJECT, validFinance) &&
+            hasRequiredObjectFields(snapshot.financeJson, requiredFinanceFields) &&
             validPayload(snapshot.tacticsJson, Tactics::class.java, JsonToken.BEGIN_OBJECT, validTactics) &&
             hasRequiredObjectFields(snapshot.tacticsJson, setOf("style", "pace", "defensivePressure", "offensiveRebound")) &&
             validPayload(snapshot.seasonJson, Season::class.java, JsonToken.BEGIN_OBJECT, validSeason) &&
@@ -289,11 +320,13 @@ object DataExporter {
             hasRequiredAwardsPlayerFields(snapshot.awardsJson, requiredPlayerFields) &&
             validPayload(snapshot.startingFiveJson, listPlayerType, JsonToken.BEGIN_ARRAY, validPlayerList) &&
             hasRequiredArrayObjectFields(snapshot.startingFiveJson, requiredPlayerFields) &&
+            hasValidStartingFive(snapshot) &&
             validPayload(snapshot.freeAgentsJson, listPlayerType, JsonToken.BEGIN_ARRAY, validPlayerList) &&
             hasRequiredArrayObjectFields(snapshot.freeAgentsJson, requiredPlayerFields) &&
             validPayload(snapshot.draftRookiesJson, listPlayerType, JsonToken.BEGIN_ARRAY, validPlayerList) &&
             hasRequiredArrayObjectFields(snapshot.draftRookiesJson, requiredPlayerFields) &&
             hasDisjointPersistencePlayerIds(snapshot) &&
+            snapshot.contractsJson != null &&
             validPayload(snapshot.contractsJson, listContractType, JsonToken.BEGIN_ARRAY, validContracts) &&
             hasRequiredArrayObjectFields(snapshot.contractsJson, requiredContractFields) &&
             validPayload(snapshot.staffMarketJson, listStaffType, JsonToken.BEGIN_ARRAY, validStaffList) &&
@@ -305,6 +338,18 @@ object DataExporter {
             validPayload(snapshot.latestBoxScoreJson, MatchBoxScore::class.java, JsonToken.BEGIN_OBJECT, validMatchBoxScore) &&
             validPayload(snapshot.playoffResultJson, Season.PlayoffResult::class.java, JsonToken.BEGIN_OBJECT, validPlayoffResult)
     }
+
+    private fun hasValidStartingFive(snapshot: GameStateRepository.GameStateSnapshot): Boolean = runCatching {
+        val payload = snapshot.startingFiveJson ?: return@runCatching true
+        val type = object : TypeToken<List<Player>>() {}.type
+        val startingFive = gson.fromJson<List<Player>>(payload, type) ?: return@runCatching false
+        val team = gson.fromJson(snapshot.teamJson, NbaTeam::class.java) ?: return@runCatching false
+        val season = gson.fromJson(snapshot.seasonJson, Season::class.java) ?: return@runCatching false
+        val managedTeam = season.teams.singleOrNull { persistenceTeamId(it) == persistenceTeamId(team) }
+            ?: return@runCatching false
+        val ids = startingFive.map { it.id }
+        ids.size == ids.toSet().size && ids.all { id -> managedTeam.players.any { it.id == id } }
+    }.getOrDefault(false)
 
     private fun hasDisjointPersistencePlayerIds(snapshot: GameStateRepository.GameStateSnapshot): Boolean = runCatching {
         val season = gson.fromJson(snapshot.seasonJson, Season::class.java) ?: return@runCatching false
