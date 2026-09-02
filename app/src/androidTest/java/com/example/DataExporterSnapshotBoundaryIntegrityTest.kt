@@ -137,7 +137,7 @@ class DataExporterSnapshotBoundaryIntegrityTest {
             val home = teams[0]
             val away = teams[1]
             val unrelated = teams[2].players.first()
-            history.add(
+            this.history.add(
                 GameSimulator.GameResult(
                     homeTeam = home,
                     awayTeam = away,
