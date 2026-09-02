@@ -78,6 +78,25 @@ class PlayerStatAccumulatorTest {
         assertEquals(Int.MAX_VALUE, player.seasonBlocks)
     }
 
+    @Test
+    fun boundaryXpReachesMaxInsteadOfWrappingDuringEvolution() {
+        val player = player().copy(xp = Int.MAX_VALUE - 3)
+        val stats = GameSimulator.PlayerStats(
+            points = 40,
+            rebounds = 0,
+            assists = 0,
+            steals = 0,
+            blocks = 0,
+            turnovers = 0,
+            plusMinus = 0
+        )
+
+        player.applyGameStatsSafely(stats)
+        player.evolveInSeason(stats.points)
+
+        assertEquals(Int.MAX_VALUE, player.xp)
+    }
+
     private fun player() = Player(
         id = 1,
         name = "Boundary Player",
