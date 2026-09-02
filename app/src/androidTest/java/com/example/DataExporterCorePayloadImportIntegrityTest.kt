@@ -58,8 +58,8 @@ class DataExporterCorePayloadImportIntegrityTest {
         repository.save(seed)
 
         // GameStateRepository.save() is allowed to normalize core fields before persistence
-        // (for example nextPlayerId). Atomic import integrity must therefore compare against the
-        // canonical snapshot that is actually persisted, not the pre-normalization input object.
+        // (for example nextPlayerId and generated roster contracts). Atomic import integrity must
+        // therefore compare against the canonical snapshot that is actually persisted.
         val existing = requireNotNull(repository.load())
         val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
         val existingSeason = gson.fromJson(existing.seasonJson, Season::class.java)
@@ -110,6 +110,10 @@ class DataExporterCorePayloadImportIntegrityTest {
         val seasonWithDetachedHistoryTeam = gson.fromJson(existing.seasonJson, JsonObject::class.java).apply {
             getAsJsonArray("history").add(gson.toJsonTree(detachedHistoryResult))
         }
+        val unknownHistoryPlayer = existingSeason.teams[2].players.first().copy(
+            id = existingSeason.teams.flatMap { it.players }.maxOf { it.id } + 10_000,
+            name = "Detached history player"
+        )
         val detachedHistoryPlayerResult = GameSimulator.GameResult(
             homeTeam = existingSeason.teams[0],
             awayTeam = existingSeason.teams[1],
@@ -118,11 +122,27 @@ class DataExporterCorePayloadImportIntegrityTest {
             attendance = 10_000,
             homeStats = emptyMap(),
             awayStats = emptyMap(),
-            injuries = listOf(GameSimulator.Injury(existingSeason.teams[2].players.first(), 3)),
+            injuries = listOf(GameSimulator.Injury(unknownHistoryPlayer, 3)),
             narration = "Detached player fixture"
         )
         val seasonWithDetachedHistoryPlayer = gson.fromJson(existing.seasonJson, JsonObject::class.java).apply {
             getAsJsonArray("history").add(gson.toJsonTree(detachedHistoryPlayerResult))
+        }
+        val gameMissingScore = gson.toJsonTree(
+            GameSimulator.GameResult(
+                homeTeam = existingSeason.teams[0],
+                awayTeam = existingSeason.teams[1],
+                homeScore = 111,
+                awayScore = 107,
+                attendance = 12_000,
+                homeStats = emptyMap(),
+                awayStats = emptyMap(),
+                injuries = emptyList(),
+                narration = "Missing scalar fixture"
+            )
+        ).asJsonObject.apply { remove("homeScore") }
+        val seasonWithIncompleteGame = gson.fromJson(existing.seasonJson, JsonObject::class.java).apply {
+            getAsJsonArray("history").add(gameMissingScore)
         }
         val awardPlayers = existingSeason.teams.flatMap { it.players }.take(5)
         val incompleteAwards = gson.toJsonTree(
@@ -161,6 +181,15 @@ class DataExporterCorePayloadImportIntegrityTest {
         val duplicateStartingFive = gson.toJson(
             existingTeam.players.take(4) + existingTeam.players.first()
         )
+        val contracts = gson.fromJson(existing.contractsJson, JsonArray::class.java)
+        val duplicateContracts = JsonArray().apply {
+            contracts.forEach { add(it.deepCopy()) }
+            add(contracts.first().deepCopy())
+        }
+        val detachedContracts = JsonArray().apply {
+            contracts.forEach { add(it.deepCopy()) }
+            add(contracts.first().asJsonObject.deepCopy().apply { addProperty("playerId", 987_654_321) })
+        }
 
         val invalidSnapshots = listOf(
             "incomplete-season-player.json" to existing.copy(
@@ -190,6 +219,9 @@ class DataExporterCorePayloadImportIntegrityTest {
             "detached-history-player.json" to existing.copy(
                 seasonJson = gson.toJson(seasonWithDetachedHistoryPlayer)
             ),
+            "incomplete-game-history.json" to existing.copy(
+                seasonJson = gson.toJson(seasonWithIncompleteGame)
+            ),
             "incomplete-award-player.json" to existing.copy(
                 awardsJson = gson.toJson(incompleteAwards)
             ),
@@ -199,8 +231,26 @@ class DataExporterCorePayloadImportIntegrityTest {
             "missing-contracts-payload.json" to existing.copy(
                 contractsJson = null
             ),
+            "empty-contracts-payload.json" to existing.copy(
+                contractsJson = "[]"
+            ),
+            "duplicate-contracts-payload.json" to existing.copy(
+                contractsJson = gson.toJson(duplicateContracts)
+            ),
+            "detached-contracts-payload.json" to existing.copy(
+                contractsJson = gson.toJson(detachedContracts)
+            ),
             "incomplete-coach.json" to existing.copy(
                 coachJson = "{\"id\":1,\"name\":\"Imported\"}"
+            ),
+            "missing-coach.json" to existing.copy(
+                coachJson = null
+            ),
+            "missing-tactics.json" to existing.copy(
+                tacticsJson = null
+            ),
+            "missing-history.json" to existing.copy(
+                historyJson = null
             ),
             "incomplete-finance.json" to existing.copy(
                 financeJson = gson.toJson(incompleteFinance)
@@ -235,6 +285,40 @@ class DataExporterCorePayloadImportIntegrityTest {
             assertEquals(23, slot.currentDay)
             assertEquals(145_000_000, slot.budget)
         }
+    }
+
+    @Test
+    fun historicalPlayerMovedToAnotherRosterRemainsImportable() = runBlocking {
+        repository.save(snapshot(seasonNumber = 5, currentDay = 30, budget = 155_000_000, difficulty = 1))
+        val existing = requireNotNull(repository.load())
+        val season = gson.fromJson(existing.seasonJson, Season::class.java)
+        val movedPlayer = season.teams[2].players.first()
+        val historicalResult = GameSimulator.GameResult(
+            homeTeam = season.teams[0],
+            awayTeam = season.teams[1],
+            homeScore = 109,
+            awayScore = 104,
+            attendance = 15_000,
+            homeStats = emptyMap(),
+            awayStats = emptyMap(),
+            injuries = listOf(GameSimulator.Injury(movedPlayer, 2)),
+            narration = "Player later moved to another roster"
+        )
+        val seasonJson = gson.fromJson(existing.seasonJson, JsonObject::class.java).apply {
+            getAsJsonArray("history").add(gson.toJsonTree(historicalResult))
+        }
+        val importFile = File(context.cacheDir, "traded-history-player.json").apply {
+            writeText(exportGson.toJson(existing.copy(seasonJson = gson.toJson(seasonJson))))
+        }
+
+        assertTrue(DataExporter.importGame(context, importFile.absolutePath))
+        val reloaded = requireNotNull(repository.load())
+        val reloadedSeason = gson.fromJson(reloaded.seasonJson, Season::class.java)
+        assertEquals(1, reloadedSeason.history.count { it.narration == historicalResult.narration })
+        assertTrue(
+            reloadedSeason.history.single { it.narration == historicalResult.narration }
+                .injuries.any { it.player.id == movedPlayer.id }
+        )
     }
 
     private fun snapshot(
