@@ -8,8 +8,17 @@ object StaffAndFacilitiesGenerator {
     private val coachLastNames = listOf("Kerr", "Spoelstra", "Popovich", "Nurse", "Jenkins", "Lue", "Hardy", "Rivers", "Mazzulla", "Kidd", "Udoka", "Daigneault", "Finch", "Carlisle", "Snyder")
 
     fun generateInitialStaff(teamName: String): TeamStaff {
+        val usedIds = mutableSetOf<Int>()
+        fun nextUniqueInitialId(): Int {
+            var id: Int
+            do {
+                id = (1000..9999).random()
+            } while (!usedIds.add(id))
+            return id
+        }
+
         val head = HeadCoachStaff(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (68..88).random(),
             salary = (3_000_000..8_500_000).random(),
@@ -25,7 +34,7 @@ object StaffAndFacilitiesGenerator {
         )
 
         val assistant = AssistantCoachStaff(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (65..82).random(),
             salary = (800_000..1_800_000).random(),
@@ -34,7 +43,7 @@ object StaffAndFacilitiesGenerator {
         )
 
         val strength = StrengthCoach(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (70..85).random(),
             salary = (600_000..1_200_000).random(),
@@ -43,7 +52,7 @@ object StaffAndFacilitiesGenerator {
         )
 
         val scout = ScoutStaff(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (70..88).random(),
             salary = (500_000..1_100_000).random(),
@@ -52,7 +61,7 @@ object StaffAndFacilitiesGenerator {
         )
 
         val doctor = TeamDoctor(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "Dr. ${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (72..90).random(),
             salary = (700_000..1_500_000).random(),
@@ -61,7 +70,7 @@ object StaffAndFacilitiesGenerator {
         )
 
         val gm = ExecutiveStaff(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (72..90).random(),
             salary = (2_000_000..4_500_000).random(),
