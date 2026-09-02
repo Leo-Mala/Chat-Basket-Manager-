@@ -29,15 +29,15 @@ class FinanceManager {
             "Dallas Mavericks", "Denver Nuggets", "Houston Rockets" -> 85
             else -> 70
         }
-        var budget = finance.budget
+        var budget = finance.budget.toLong()
         val expenses = finance.expenses.toMutableList()
         val gateRevenue = if (isHome) safeAmount(result.attendance.toLong() * ticketPrice.toLong()) else 0
         if (gateRevenue > 0) {
-            budget = safeBudget(budget.toLong() + gateRevenue.toLong())
+            budget += gateRevenue.toLong()
             expenses += Expense("Receita de Ingressos", gateRevenue, "Dia $day")
         }
         val sponsorRevenue = safeAmount(finance.sponsors.sumOf { it.amountPerYear.toLong() } / 82L)
-        budget = safeBudget(budget.toLong() + sponsorRevenue.toLong())
+        budget += sponsorRevenue.toLong()
         expenses += Expense("Receita de Patrocínio", sponsorRevenue, "Dia $day")
 
         // TV rights are credited once at the offseason transition. Do not credit them
@@ -45,23 +45,27 @@ class FinanceManager {
         val annualPayroll = annualPlayerPayroll
             ?: team.players.sumOf { it.calculateSalary().toLong() }
         val playerSalaries = safeAmount(annualPayroll / 82L)
-        budget = safeBudget(budget.toLong() - playerSalaries.toLong())
+        budget -= playerSalaries.toLong()
         expenses += Expense("Salários dos Jogadores", playerSalaries, "Dia $day")
 
         if (day % 5 == 0) {
             val operations = 250_000
-            budget = safeBudget(budget.toLong() - operations.toLong())
+            budget -= operations.toLong()
             expenses += Expense("Despesas Operacionais", operations, "Dia $day")
         }
 
         var coachSalaryPaid = finance.coachSalaryPaid
         if (!coachSalaryPaid && coach != null) {
             val salary = coach.salary
-            budget = safeBudget(budget.toLong() - salary.toLong())
+            budget -= salary.toLong()
             expenses += Expense("Salário do Técnico", salary, "Temporada")
             coachSalaryPaid = true
         }
-        return finance.copy(budget = budget, expenses = expenses, coachSalaryPaid = coachSalaryPaid)
+        return finance.copy(
+            budget = safeBudget(budget),
+            expenses = expenses,
+            coachSalaryPaid = coachSalaryPaid
+        )
     }
 
     fun signSponsor(finance: Finance, sponsor: Sponsor, day: Int): Finance? {
