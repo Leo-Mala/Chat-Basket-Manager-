@@ -1093,15 +1093,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             syncStartingFive(persist = false)
         }
         finances?.let { f ->
-            val tvRights = 85_000_000
-            val coachSal = coach?.salary ?: 350_000
-            val renewal = f.sponsors.map { it.copy(yearsRemaining = it.yearsRemaining - 1) }.filter { it.yearsRemaining > 0 }
-            finances = f.copy(
-                budget = f.budget + tvRights - if (!f.coachSalaryPaid) coachSal else 0,
-                expenses = (f.expenses + Expense("Cota Direitos de TV & Liga", tvRights, "Temporada ${transition.season.seasonNumber}") +
-                    if (!f.coachSalaryPaid) listOf(Expense("Salário Anual do Técnico", coachSal, "Temporada ${currentSeason.seasonNumber}")) else emptyList()).toMutableList(),
-                sponsors = renewal,
-                coachSalaryPaid = false
+            finances = financeManager.applyOffseasonSettlement(
+                finance = f,
+                coachSalary = coach?.salary ?: 350_000,
+                nextSeasonNumber = transition.season.seasonNumber,
+                completedSeasonNumber = currentSeason.seasonNumber
             )
         }
         playoffResult = null
@@ -1239,17 +1235,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val userTeamName = managedTeam?.name ?: ""
         finances?.let { f ->
             val (prize, label) = playoffManager.userPrize(result, userTeamName)
-            if (prize > 0) {
-                f.budget += prize
-                f.expenses.add(0, Expense(label, prize, "Playoffs ${s.seasonNumber}"))
-                if (result.nbaChampion.name == userTeamName) {
-                    val sponsorBonus = f.sponsors.sumOf { it.amountPerYear / 2 }
-                    if (sponsorBonus > 0) {
-                        f.budget += sponsorBonus
-                        f.expenses.add(0, Expense("Bônus Patrocinador (Título 🏆)", sponsorBonus, "Playoffs ${s.seasonNumber}"))
-                    }
-                }
-            }
+            finances = financeManager.applyPlayoffRewards(
+                finance = f,
+                prize = prize,
+                label = label,
+                champion = result.nbaChampion.name == userTeamName,
+                seasonNumber = s.seasonNumber
+            )
         }
         val stats = result.seriesResults.flatMap { it.games }.flatMap { it.homeStats.entries + it.awayStats.entries }
         val topPlayerStat = stats.maxByOrNull { it.value.points }
