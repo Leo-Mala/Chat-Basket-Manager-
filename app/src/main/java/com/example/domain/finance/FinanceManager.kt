@@ -68,6 +68,62 @@ class FinanceManager {
         )
     }
 
+    fun applyOffseasonSettlement(
+        finance: Finance,
+        coachSalary: Int,
+        nextSeasonNumber: Int,
+        completedSeasonNumber: Int,
+        tvRights: Int = 85_000_000
+    ): Finance {
+        val chargeCoachSalary = !finance.coachSalaryPaid
+        val settledBudget = finance.budget.toLong() + tvRights.toLong() -
+            if (chargeCoachSalary) coachSalary.toLong() else 0L
+        val renewedSponsors = finance.sponsors
+            .map { it.copy(yearsRemaining = it.yearsRemaining - 1) }
+            .filter { it.yearsRemaining > 0 }
+        val ledger = finance.expenses +
+            Expense("Cota Direitos de TV & Liga", tvRights, "Temporada $nextSeasonNumber") +
+            if (chargeCoachSalary) {
+                listOf(Expense("Salário Anual do Técnico", coachSalary, "Temporada $completedSeasonNumber"))
+            } else {
+                emptyList()
+            }
+        return finance.copy(
+            budget = safeBudget(settledBudget),
+            expenses = ledger.toMutableList(),
+            sponsors = renewedSponsors,
+            coachSalaryPaid = false
+        )
+    }
+
+    fun applyPlayoffRewards(
+        finance: Finance,
+        prize: Int,
+        label: String,
+        champion: Boolean,
+        seasonNumber: Int
+    ): Finance {
+        if (prize <= 0) return finance
+
+        var settledBudget = finance.budget.toLong() + prize.toLong()
+        val ledger = finance.expenses.toMutableList()
+        ledger.add(0, Expense(label, prize, "Playoffs $seasonNumber"))
+
+        if (champion) {
+            // Preserve the legacy per-sponsor half-bonus rounding while avoiding Int overflow.
+            val sponsorBonus = safeAmount(finance.sponsors.sumOf { it.amountPerYear.toLong() / 2L })
+            if (sponsorBonus > 0) {
+                settledBudget += sponsorBonus.toLong()
+                ledger.add(0, Expense("Bônus Patrocinador (Título 🏆)", sponsorBonus, "Playoffs $seasonNumber"))
+            }
+        }
+
+        return finance.copy(
+            budget = safeBudget(settledBudget),
+            expenses = ledger
+        )
+    }
+
     fun signSponsor(finance: Finance, sponsor: Sponsor, day: Int): Finance? {
         if (finance.sponsors.any { it.name == sponsor.name }) return null
         val advance = sponsor.amountPerYear / 4
