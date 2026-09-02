@@ -81,6 +81,16 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
                 if (!ids.add(id)) throw JsonParseException("Duplicate staff-market id: $id")
             }
         }
+
+        embeddedArray(root, "newsFeedJson")?.forEachIndexed { index, element ->
+            val news = element.asObject("newsFeed[$index]")
+            requireJsonBoolean(news.get("isRead"), "newsFeed[$index].isRead")
+        }
+
+        embeddedArray(root, "contractsJson")?.forEachIndexed { index, element ->
+            val contract = element.asObject("contracts[$index]")
+            requireJsonString(contract.get("teamId"), "contracts[$index].teamId")
+        }
     }
 
     private fun validateDecodedSnapshot(snapshot: GameStateRepository.GameStateSnapshot, gson: Gson) {
@@ -95,15 +105,20 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
             ?: throw JsonParseException("draftRookiesJson is required")
 
         val canonicalPlayers = LinkedHashMap<Int, Player>()
+        val rosterOwnerByPlayerId = mutableMapOf<Int, String>()
         var maxPersistedPlayerId = 0
         fun recordPlayer(player: Player) {
             validatePlayerBounds(player)
             maxPersistedPlayerId = maxOf(maxPersistedPlayerId, player.id)
         }
 
-        season.teams.flatMap { it.players }.forEach { player ->
-            recordPlayer(player)
-            canonicalPlayers[player.id] = player
+        season.teams.forEach { team ->
+            val teamId = persistenceTeamId(team)
+            team.players.forEach { player ->
+                recordPlayer(player)
+                canonicalPlayers[player.id] = player
+                rosterOwnerByPlayerId[player.id] = teamId
+            }
         }
         freeAgents.forEach { player ->
             recordPlayer(player)
@@ -161,6 +176,11 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
                 } catch (_: ArithmeticException) {
                     throw JsonParseException("Imported contract payroll overflows Long")
                 }
+                val expectedTeamId = rosterOwnerByPlayerId[contract.playerId]
+                    ?: throw JsonParseException("Contract ${contract.playerId} does not belong to a current roster player")
+                if (contract.teamId != expectedTeamId) {
+                    throw JsonParseException("Contract ${contract.playerId} has a non-canonical teamId")
+                }
             }
         }
 
@@ -195,6 +215,9 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
         }
         if (player.id <= 0) {
             throw JsonParseException("Player id must be positive")
+        }
+        if (player.injured != (player.injuryDays > 0)) {
+            throw JsonParseException("Player ${player.id} has inconsistent injury state")
         }
     }
 
@@ -302,6 +325,9 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
         if (!parsed.isJsonArray) throw JsonParseException("$field must contain a JSON array")
         return parsed.asJsonArray
     }
+
+    private fun persistenceTeamId(team: com.example.models.NbaTeam): String =
+        team.abbreviation.ifBlank { team.name.lowercase().replace("[^a-z0-9]".toRegex(), "_") }
 
     private fun JsonElement.asObject(label: String): JsonObject {
         if (!isJsonObject) throw JsonParseException("$label must be an object")
