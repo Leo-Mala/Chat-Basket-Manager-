@@ -52,8 +52,13 @@ class DataExporterCorePayloadImportIntegrityTest {
 
     @Test
     fun incompleteCorePayloadsAreRejectedAtomically() = runBlocking {
-        val existing = snapshot(seasonNumber = 4, currentDay = 23, budget = 145_000_000, difficulty = 2)
-        repository.save(existing)
+        val seed = snapshot(seasonNumber = 4, currentDay = 23, budget = 145_000_000, difficulty = 2)
+        repository.save(seed)
+
+        // GameStateRepository.save() is allowed to normalize core fields before persistence
+        // (for example nextPlayerId). Atomic import integrity must therefore compare against the
+        // canonical snapshot that is actually persisted, not the pre-normalization input object.
+        val existing = requireNotNull(repository.load())
         val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
         val existingSeason = gson.fromJson(existing.seasonJson, Season::class.java)
         val existingFinance = gson.fromJson(existing.financeJson, Finance::class.java)
