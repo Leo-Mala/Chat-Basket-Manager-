@@ -43,7 +43,6 @@ class ImportSnapshotBoundaryValidationFactory : TypeAdapterFactory {
         validateStandings(season)
         validateArenaRevenueBounds(snapshot, season, gson)
         validateHistoricalStatIdentity(season)
-        validateHistoricalInjuryParticipants(season)
         validatePlayerInjuryState(snapshot, season, gson)
 
         snapshot.financeJson?.let { raw ->
@@ -205,15 +204,6 @@ class ImportSnapshotBoundaryValidationFactory : TypeAdapterFactory {
                         "Historical stat player ${historicalPlayer.id} conflicts with canonical persisted player state"
                     )
                 }
-            }
-        }
-    }
-
-    private fun validateHistoricalInjuryParticipants(season: Season) {
-        season.history.forEach { result ->
-            val participantIds = (result.homeTeam.players + result.awayTeam.players).map(Player::id).toSet()
-            if (result.injuries.any { it.player.id !in participantIds }) {
-                throw JsonParseException("Historical injury references a player outside the recorded participants")
             }
         }
     }
