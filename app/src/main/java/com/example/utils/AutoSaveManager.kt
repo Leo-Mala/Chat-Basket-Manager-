@@ -20,6 +20,7 @@ object AutoSaveManager {
         .registerTypeAdapter(StaffMember::class.java, StaffMemberJsonAdapter())
         .registerTypeAdapterFactory(ImportSnapshotValidationFactory())
         .registerTypeAdapterFactory(ImportSnapshotBoundaryValidationFactory())
+        .registerTypeAdapterFactory(ImportSnapshotReviewValidationFactory())
         .create()
 
     fun init(context: Context) {
