@@ -282,7 +282,7 @@ class ImportSnapshotValidationFactory : TypeAdapterFactory {
                 series.roundName.equals("Grande Final", true) ||
                 series.roundName.equals("FINALS", true)
         } ?: throw JsonParseException("Completed playoff result must contain exactly one finals series")
-        val finalists = setOfNotNull(finals.team1?.name, finals.team2?.name)
+        val finalists = listOfNotNull(finals.team1?.name, finals.team2?.name).toSet()
         val conferenceChampions = setOf(playoff.eastChampion.name, playoff.westChampion.name)
         if (finalists != conferenceChampions || finals.winner.name != playoff.nbaChampion.name) {
             throw JsonParseException("Playoff finals do not reconcile with conference and NBA champions")
