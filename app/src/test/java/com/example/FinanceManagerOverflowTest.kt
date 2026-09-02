@@ -20,25 +20,25 @@ class FinanceManagerOverflowTest {
         players = emptyList()
     )
 
+    private fun result(attendance: Int = 20_000) = GameSimulator.GameResult(
+        homeTeam = team,
+        awayTeam = team.copy(name = "Away", abbreviation = "AWY"),
+        homeScore = 100,
+        awayScore = 90,
+        attendance = attendance,
+        homeStats = emptyMap(),
+        awayStats = emptyMap(),
+        injuries = emptyList(),
+        narration = ""
+    )
+
     @Test
     fun regularSeasonRevenueDoesNotWrapBudgetNegative() {
-        val result = GameSimulator.GameResult(
-            homeTeam = team,
-            awayTeam = team.copy(name = "Away", abbreviation = "AWY"),
-            homeScore = 100,
-            awayScore = 90,
-            attendance = 20_000,
-            homeStats = emptyMap(),
-            awayStats = emptyMap(),
-            injuries = emptyList(),
-            narration = ""
-        )
-
         val updated = manager.applyRegularSeasonGame(
             finance = Finance(budget = Int.MAX_VALUE - 10),
             team = team,
             coach = null,
-            result = result,
+            result = result(),
             isHome = true,
             day = 1,
             ticketPriceOverride = 500,
@@ -46,6 +46,27 @@ class FinanceManagerOverflowTest {
         )
 
         assertEquals(Int.MAX_VALUE, updated.budget)
+    }
+
+    @Test
+    fun laterDebitsPreserveNetBalanceBeforeFinalClamp() {
+        val startingBudget = Int.MAX_VALUE - 10
+        val gateRevenue = 20_000L * 70L
+        val annualPayroll = 164_000_000L
+        val dailyPayroll = annualPayroll / 82L
+        val expected = (startingBudget.toLong() + gateRevenue - dailyPayroll).toInt()
+
+        val updated = manager.applyRegularSeasonGame(
+            finance = Finance(budget = startingBudget),
+            team = team,
+            coach = null,
+            result = result(),
+            isHome = true,
+            day = 1,
+            annualPlayerPayroll = annualPayroll
+        )
+
+        assertEquals(expected, updated.budget)
     }
 
     @Test
@@ -57,23 +78,12 @@ class FinanceManagerOverflowTest {
                 Sponsor("B", Int.MAX_VALUE, 1)
             )
         )
-        val result = GameSimulator.GameResult(
-            homeTeam = team,
-            awayTeam = team.copy(name = "Away", abbreviation = "AWY"),
-            homeScore = 100,
-            awayScore = 90,
-            attendance = 0,
-            homeStats = emptyMap(),
-            awayStats = emptyMap(),
-            injuries = emptyList(),
-            narration = ""
-        )
 
         val updated = manager.applyRegularSeasonGame(
             finance = finance,
             team = team,
             coach = null,
-            result = result,
+            result = result(attendance = 0),
             isHome = false,
             day = 1,
             annualPlayerPayroll = 0L
