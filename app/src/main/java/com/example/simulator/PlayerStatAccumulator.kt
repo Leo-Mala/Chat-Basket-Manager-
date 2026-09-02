@@ -20,6 +20,14 @@ internal fun Player.applyGameStatsSafely(stats: GameSimulator.PlayerStats) {
     seasonAssists = saturatingAdd(seasonAssists, stats.assists)
     seasonSteals = saturatingAdd(seasonSteals, stats.steals)
     seasonBlocks = saturatingAdd(seasonBlocks, stats.blocks)
+
+    // evolveInSeason() credits XP immediately after this function. Reserve exactly that amount
+    // when a valid persisted XP value is near Int.MAX_VALUE so the existing addition reaches the
+    // representable ceiling instead of wrapping negative. Normal-range XP is untouched.
+    val earnedXp = (8 + stats.points / 4).coerceIn(8, 25)
+    if (xp >= 0 && xp > Int.MAX_VALUE - earnedXp) {
+        xp = Int.MAX_VALUE - earnedXp
+    }
 }
 
 private fun saturatingAdd(current: Int, increment: Int): Int =
