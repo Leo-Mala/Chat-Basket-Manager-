@@ -59,6 +59,7 @@ import com.example.domain.season.SeasonManager
 import com.example.domain.trade.TradeManager
 import com.example.domain.draft.DraftManager
 import com.example.domain.playoff.PlayoffManager
+import com.example.domain.rules.MainMenuNavigationRules
 import com.example.domain.rules.SavedGameLoadState
 import com.example.domain.season.CareerResumeRules
 import com.example.models.*
@@ -92,14 +93,20 @@ fun BasketManagerGameApp() {
         }
     })
 
-    var showMainMenu by remember { mutableStateOf(true) }
+    var showMainMenu by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     val menuScope = rememberCoroutineScope()
     var saveSlots by remember { mutableStateOf(SaveSlotManager.getSlots(context)) }
     var activeSlotId by remember { mutableIntStateOf(SaveSlotManager.getActiveSlot(context)) }
     var pendingContinueSlot by remember { mutableStateOf<Int?>(null) }
+    val seasonSimulationProgress by viewModel.seasonSimulationProgressFlow.collectAsStateWithLifecycle()
+    val seasonSimulationInProgress = seasonSimulationProgress != null
 
     androidx.activity.compose.BackHandler(enabled = !showMainMenu) {
+        if (!MainMenuNavigationRules.canExitToMainMenu(seasonSimulationInProgress)) {
+            ToastUtils.showToast(context, "Aguarde a simulação da temporada terminar antes de trocar de carreira.")
+            return@BackHandler
+        }
         if (viewModel.gameState == GameState.SETUP) {
             SaveSlotManager.clearPendingNewSlot(context)
         }
@@ -320,7 +327,16 @@ fun BasketManagerGameApp() {
                             Button(onClick = { viewModel.retryLoadSavedGame() }) { Text("Tentar novamente") }
                         }
                     }
-                    GameState.ACTIVE -> ActiveManagerScreen(viewModel = viewModel, onExitToMainMenu = { showMainMenu = true })
+                    GameState.ACTIVE -> ActiveManagerScreen(
+                        viewModel = viewModel,
+                        onExitToMainMenu = {
+                            if (MainMenuNavigationRules.canExitToMainMenu(seasonSimulationInProgress)) {
+                                showMainMenu = true
+                            } else {
+                                ToastUtils.showToast(context, "Aguarde a simulação da temporada terminar antes de trocar de carreira.")
+                            }
+                        }
+                    )
                     GameState.PLAYOFFS -> PlayoffScreen(viewModel)
                     GameState.CHAMPIONSHIP_CELEBRATION -> CelebrationScreen(viewModel)
                     GameState.DRAFT -> DraftScreen(viewModel)
