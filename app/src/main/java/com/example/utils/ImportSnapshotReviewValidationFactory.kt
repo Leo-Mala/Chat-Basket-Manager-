@@ -1,0 +1,296 @@
+package com.example.utils
+
+import com.example.data.repository.GameStateRepository
+import com.example.models.AssistantCoachNotification
+import com.example.models.Awards
+import com.example.models.FacilityType
+import com.example.models.Finance
+import com.example.models.FinanceAdvanced
+import com.example.models.MatchBoxScore
+import com.example.models.NbaTeam
+import com.example.models.Player
+import com.example.models.Season
+import com.example.models.TeamFacilities
+import com.google.gson.Gson
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.JsonParseException
+import com.google.gson.JsonParser
+import com.google.gson.TypeAdapter
+import com.google.gson.TypeAdapterFactory
+import com.google.gson.reflect.TypeToken
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonWriter
+
+/**
+ * Review-driven import invariants that must be checked before Room or save-slot metadata is
+ * mutated. This adapter is import/export-codec-only and deliberately leaves gameplay rules
+ * untouched.
+ */
+class ImportSnapshotReviewValidationFactory : TypeAdapterFactory {
+    override fun <T> create(gson: Gson, type: TypeToken<T>): TypeAdapter<T>? {
+        if (type.rawType != GameStateRepository.GameStateSnapshot::class.java) return null
+        val delegate = gson.getDelegateAdapter(this, type)
+        return object : TypeAdapter<T>() {
+            override fun write(out: JsonWriter, value: T) = delegate.write(out, value)
+
+            override fun read(input: JsonReader): T {
+                val tree = JsonParser.parseReader(input)
+                if (!tree.isJsonObject) throw JsonParseException("Save snapshot must be a JSON object")
+                validateRawSnapshot(tree.asJsonObject)
+                val value = delegate.fromJsonTree(tree)
+                @Suppress("UNCHECKED_CAST")
+                validateDecodedSnapshot(value as GameStateRepository.GameStateSnapshot, gson)
+                return value
+            }
+        }.nullSafe()
+    }
+
+    private fun validateRawSnapshot(root: JsonObject) {
+        val schema = root.get("schemaVersion")
+        if (schema == null || !schema.isJsonPrimitive || !schema.asJsonPrimitive.isNumber || schema.asInt != SUPPORTED_SCHEMA_VERSION) {
+            throw JsonParseException("Unsupported or missing snapshot schemaVersion")
+        }
+        validatePlayerFieldsRecursively(root)
+    }
+
+    private fun validatePlayerFieldsRecursively(element: JsonElement) {
+        when {
+            element.isJsonArray -> element.asJsonArray.forEach(::validatePlayerFieldsRecursively)
+            element.isJsonObject -> {
+                val obj = element.asJsonObject
+                val looksLikePlayer = PLAYER_REQUIRED_FIELDS.all(obj::has)
+                if (looksLikePlayer) {
+                    val position = obj.get("position")
+                    if (position == null || !position.isJsonPrimitive || !position.asJsonPrimitive.isString || position.asString !in SUPPORTED_POSITIONS) {
+                        throw JsonParseException("Imported player contains an unsupported position")
+                    }
+                    listOf("careerGames", "seasonGames").forEach { field ->
+                        val value = obj.get(field)
+                        if (value != null && value.isJsonPrimitive && value.asJsonPrimitive.isNumber && value.asLong >= Int.MAX_VALUE.toLong()) {
+                            throw JsonParseException("Imported player leaves no headroom for $field")
+                        }
+                    }
+                }
+                obj.entrySet().forEach { (_, child) ->
+                    if (child.isJsonPrimitive && child.asJsonPrimitive.isString) {
+                        val parsed = runCatching { JsonParser.parseString(child.asString) }.getOrNull()
+                        if (parsed != null && (parsed.isJsonObject || parsed.isJsonArray)) {
+                            validatePlayerFieldsRecursively(parsed)
+                        }
+                    } else {
+                        validatePlayerFieldsRecursively(child)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun validateDecodedSnapshot(snapshot: GameStateRepository.GameStateSnapshot, gson: Gson) {
+        if (snapshot.schemaVersion != SUPPORTED_SCHEMA_VERSION) {
+            throw JsonParseException("Unsupported snapshot schemaVersion")
+        }
+        val season = snapshot.seasonJson?.let { gson.fromJson(it, Season::class.java) }
+            ?: throw JsonParseException("seasonJson is required")
+        validateSeasonProgress(season)
+        validateCanonicalGameParticipants(season)
+        validateSeasonNumberHeadroom(season)
+        validateFinance(snapshot, season, gson)
+        validateAdvancedFinance(snapshot, gson)
+        validateNotifications(snapshot, gson)
+        validateFacilities(snapshot, gson)
+        validateBoxScore(snapshot, gson)
+    }
+
+    private fun validateSeasonProgress(season: Season) {
+        if (season.currentDay !in 0..MAX_REGULAR_SEASON_GAMES) {
+            throw JsonParseException("season.currentDay exceeds the supported regular-season range")
+        }
+        season.standings.forEach { (teamName, record) ->
+            if (record.gamesPlayed != season.currentDay) {
+                throw JsonParseException("Standings progress for $teamName does not match season.currentDay")
+            }
+        }
+    }
+
+    private fun validateCanonicalGameParticipants(season: Season) {
+        val canonicalTeams = season.teams.associateBy(::persistenceTeamId)
+        season.history.forEach { result ->
+            val home = canonicalTeams[persistenceTeamId(result.homeTeam)]
+                ?: throw JsonParseException("Historical home team is not canonical")
+            val away = canonicalTeams[persistenceTeamId(result.awayTeam)]
+                ?: throw JsonParseException("Historical away team is not canonical")
+            val homeIds = home.players.map(Player::id).toSet()
+            val awayIds = away.players.map(Player::id).toSet()
+            if (result.homeStats.keys.any { it.id !in homeIds }) {
+                throw JsonParseException("Historical home stats reference a player outside the canonical home roster")
+            }
+            if (result.awayStats.keys.any { it.id !in awayIds }) {
+                throw JsonParseException("Historical away stats reference a player outside the canonical away roster")
+            }
+            val participantIds = homeIds + awayIds
+            if (result.injuries.any { it.player.id !in participantIds }) {
+                throw JsonParseException("Historical injury references a player outside canonical participants")
+            }
+        }
+    }
+
+    private fun validateSeasonNumberHeadroom(season: Season) {
+        if (season.seasonNumber >= Int.MAX_VALUE) {
+            throw JsonParseException("seasonNumber leaves no headroom for the next season")
+        }
+    }
+
+    private fun validateFinance(snapshot: GameStateRepository.GameStateSnapshot, season: Season, gson: Gson) {
+        val raw = snapshot.financeJson ?: return
+        val finance = gson.fromJson(raw, Finance::class.java)
+            ?: throw JsonParseException("financeJson could not be decoded")
+        if (finance.arenaSeatsLevel !in 1..MAX_FINANCE_UPGRADE_LEVEL ||
+            finance.medicalStaffLevel !in 1..MAX_FINANCE_UPGRADE_LEVEL ||
+            finance.scoutingLevel !in 1..MAX_FINANCE_UPGRADE_LEVEL
+        ) {
+            throw JsonParseException("Finance upgrade levels must be within the supported 1..5 range")
+        }
+
+        val managedTeam = snapshot.teamJson?.let { gson.fromJson(it, NbaTeam::class.java) }
+            ?: season.teams.firstOrNull { it.name == season.userTeamName }
+            ?: return
+        val ticketOverride = snapshot.financeAdvancedJson
+            ?.let { gson.fromJson(it, FinanceAdvanced::class.java) }
+            ?.ticketPrice
+            ?: 0
+        val ticketPrice = maxOf(DEFAULT_MAX_TICKET_PRICE, ticketOverride)
+        val expandedCapacity = managedTeam.arena.capacity.toLong() + (finance.arenaSeatsLevel - 1L) * ARENA_SEATS_PER_LEVEL
+        if (expandedCapacity <= 0L || expandedCapacity > Int.MAX_VALUE.toLong()) {
+            throw JsonParseException("Expanded arena capacity exceeds the supported Int range")
+        }
+        val gateRevenue = safeMultiply(expandedCapacity, ticketPrice.toLong(), "gate revenue")
+        val annualSponsorRevenue = finance.sponsors.fold(0L) { acc, sponsor ->
+            safeAdd(acc, sponsor.amountPerYear.toLong(), "sponsor revenue")
+        }
+        val sponsorPerGame = annualSponsorRevenue / MAX_REGULAR_SEASON_GAMES
+        val maxNextCredit = safeAdd(gateRevenue, sponsorPerGame, "next-game credit")
+        if (finance.budget.toLong() > Int.MAX_VALUE.toLong() - maxNextCredit) {
+            throw JsonParseException("Imported budget leaves no headroom for normal game revenue")
+        }
+
+        val maxAnnualPayroll = snapshot.contractsJson?.let { contractsJson ->
+            val type = object : TypeToken<List<com.example.models.PlayerContract>>() {}.type
+            val contracts: List<com.example.models.PlayerContract> = gson.fromJson(contractsJson, type)
+            contracts.fold(0L) { acc, contract -> safeAdd(acc, contract.salary, "contract payroll") }
+        } ?: 0L
+        val playerSalaryPerGame = (maxAnnualPayroll / MAX_REGULAR_SEASON_GAMES).coerceAtMost(Int.MAX_VALUE.toLong())
+        val coachDebit = snapshot.coachJson?.let { coachJson ->
+            gson.fromJson(coachJson, com.example.models.Coach::class.java)?.salary?.toLong() ?: 0L
+        } ?: 0L
+        val maxNextDebit = safeAdd(safeAdd(playerSalaryPerGame, OPERATIONS_DEBIT, "next-game debit"), coachDebit, "next-game debit")
+        if (finance.budget.toLong() < Int.MIN_VALUE.toLong() + maxNextDebit) {
+            throw JsonParseException("Imported budget leaves no headroom for normal game expenses")
+        }
+    }
+
+    private fun validateAdvancedFinance(snapshot: GameStateRepository.GameStateSnapshot, gson: Gson) {
+        val raw = snapshot.financeAdvancedJson ?: return
+        val advanced = gson.fromJson(raw, FinanceAdvanced::class.java)
+            ?: throw JsonParseException("financeAdvancedJson could not be decoded")
+        val expenseParts = listOf(
+            advanced.expenses.playerSalaries,
+            advanced.expenses.staffSalaries,
+            advanced.expenses.facilityMaintenance,
+            advanced.expenses.travelLogistics,
+            advanced.expenses.operationalExpenses,
+            advanced.expenses.luxuryTaxPaid
+        )
+        val total = expenseParts.fold(0L) { acc, value -> safeAdd(acc, value.toLong(), "advanced-finance expenses") }
+        if (total > Int.MAX_VALUE.toLong()) {
+            throw JsonParseException("Imported advanced-finance expenses exceed the supported aggregate range")
+        }
+    }
+
+    private fun validateNotifications(snapshot: GameStateRepository.GameStateSnapshot, gson: Gson) {
+        val raw = snapshot.notificationsJson ?: return
+        val type = object : TypeToken<List<AssistantCoachNotification>>() {}.type
+        val notifications: List<AssistantCoachNotification> = gson.fromJson(raw, type)
+        notifications.forEach { notification ->
+            val bonusType = notification.recommendedBonusType
+            val bonusLabel = notification.recommendedBonusLabel
+            if ((bonusType == null) != (bonusLabel == null)) {
+                throw JsonParseException("Notification recommendation type and label must be paired")
+            }
+            if (bonusType != null && bonusType !in SUPPORTED_BONUS_TYPES) {
+                throw JsonParseException("Notification contains an unsupported recommendation type")
+            }
+            if (bonusLabel != null && bonusLabel.isBlank()) {
+                throw JsonParseException("Notification recommendation label must not be blank")
+            }
+        }
+    }
+
+    private fun validateFacilities(snapshot: GameStateRepository.GameStateSnapshot, gson: Gson) {
+        val raw = snapshot.facilitiesJson ?: return
+        val facilities = gson.fromJson(raw, TeamFacilities::class.java)
+            ?: throw JsonParseException("facilitiesJson could not be decoded")
+        val expected = listOf(
+            facilities.arena to FacilityType.ARENA,
+            facilities.training to FacilityType.TRAINING_FACILITY,
+            facilities.medical to FacilityType.MEDICAL_CENTER,
+            facilities.scouting to FacilityType.SCOUTING_DEPT
+        )
+        expected.forEach { (facility, expectedType) ->
+            if (facility.type != expectedType) {
+                throw JsonParseException("Facility slot does not match its canonical type")
+            }
+        }
+    }
+
+    private fun validateBoxScore(snapshot: GameStateRepository.GameStateSnapshot, gson: Gson) {
+        val raw = snapshot.latestBoxScoreJson ?: return
+        val box = gson.fromJson(raw, MatchBoxScore::class.java)
+            ?: throw JsonParseException("latestBoxScoreJson could not be decoded")
+        val homeQuarterTotal = safeIntSum(box.homeQuarterScores, "home quarter scores")
+        val awayQuarterTotal = safeIntSum(box.awayQuarterScores, "away quarter scores")
+        val homePlayerTotal = safeIntSum(box.homePlayers.map { it.points }, "home player points")
+        val awayPlayerTotal = safeIntSum(box.awayPlayers.map { it.points }, "away player points")
+        if (homeQuarterTotal != box.homeScore || awayQuarterTotal != box.awayScore ||
+            box.homeTeamTotals.points != box.homeScore || box.awayTeamTotals.points != box.awayScore ||
+            homePlayerTotal != box.homeScore || awayPlayerTotal != box.awayScore
+        ) {
+            throw JsonParseException("Imported box-score totals do not reconcile with the recorded score")
+        }
+    }
+
+    private fun safeIntSum(values: List<Int>, label: String): Int {
+        val total = values.fold(0L) { acc, value -> safeAdd(acc, value.toLong(), label) }
+        if (total !in 0..Int.MAX_VALUE.toLong()) throw JsonParseException("$label exceed the supported Int range")
+        return total.toInt()
+    }
+
+    private fun safeAdd(left: Long, right: Long, label: String): Long = try {
+        Math.addExact(left, right)
+    } catch (_: ArithmeticException) {
+        throw JsonParseException("Imported $label overflow Long")
+    }
+
+    private fun safeMultiply(left: Long, right: Long, label: String): Long = try {
+        Math.multiplyExact(left, right)
+    } catch (_: ArithmeticException) {
+        throw JsonParseException("Imported $label overflow Long")
+    }
+
+    private fun persistenceTeamId(team: NbaTeam): String =
+        team.abbreviation.ifBlank { team.name.lowercase().replace("[^a-z0-9]".toRegex(), "_") }
+
+    private companion object {
+        const val SUPPORTED_SCHEMA_VERSION = 2
+        const val MAX_REGULAR_SEASON_GAMES = 82
+        const val MAX_FINANCE_UPGRADE_LEVEL = 5
+        const val DEFAULT_MAX_TICKET_PRICE = 120
+        const val ARENA_SEATS_PER_LEVEL = 2_000L
+        const val OPERATIONS_DEBIT = 250_000L
+        val SUPPORTED_POSITIONS = setOf("PG", "SG", "SF", "PF", "C")
+        val SUPPORTED_BONUS_TYPES = setOf("ATTACK_BOOST", "DEFENSE_BOOST", "XP_BOOST", "MOTIVATION_BOOST")
+        val PLAYER_REQUIRED_FIELDS = setOf(
+            "id", "name", "position", "overall", "shooting", "defense", "rebound", "passing", "athleticism", "age"
+        )
+    }
+}
