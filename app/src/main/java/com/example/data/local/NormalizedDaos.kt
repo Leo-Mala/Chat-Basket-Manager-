@@ -2,12 +2,18 @@ package com.example.data.local
 
 import androidx.room.Dao
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 
 @Dao
 interface TeamDao {
     @Query("SELECT * FROM teams ORDER BY name") suspend fun all(): List<TeamEntity>
-    @Upsert suspend fun upsertAll(items: List<TeamEntity>)
+    @Upsert suspend fun upsertRows(items: List<TeamEntity>)
+    @Transaction
+    suspend fun upsertAll(items: List<TeamEntity>) {
+        clear()
+        upsertRows(items)
+    }
     @Query("DELETE FROM teams") suspend fun clear()
 }
 
@@ -22,7 +28,12 @@ interface PlayerDao {
 @Dao
 interface CoachDao {
     @Query("SELECT * FROM coaches LIMIT 1") suspend fun get(): CoachEntity?
-    @Upsert suspend fun upsert(item: CoachEntity)
+    @Upsert suspend fun upsertRow(item: CoachEntity)
+    @Transaction
+    suspend fun upsert(item: CoachEntity) {
+        clear()
+        upsertRow(item)
+    }
     @Query("DELETE FROM coaches") suspend fun clear()
 }
 

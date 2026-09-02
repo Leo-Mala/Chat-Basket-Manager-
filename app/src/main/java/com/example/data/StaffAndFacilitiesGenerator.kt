@@ -8,8 +8,17 @@ object StaffAndFacilitiesGenerator {
     private val coachLastNames = listOf("Kerr", "Spoelstra", "Popovich", "Nurse", "Jenkins", "Lue", "Hardy", "Rivers", "Mazzulla", "Kidd", "Udoka", "Daigneault", "Finch", "Carlisle", "Snyder")
 
     fun generateInitialStaff(teamName: String): TeamStaff {
+        val usedIds = mutableSetOf<Int>()
+        fun nextUniqueInitialId(): Int {
+            var id: Int
+            do {
+                id = (1000..9999).random()
+            } while (!usedIds.add(id))
+            return id
+        }
+
         val head = HeadCoachStaff(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (68..88).random(),
             salary = (3_000_000..8_500_000).random(),
@@ -25,7 +34,7 @@ object StaffAndFacilitiesGenerator {
         )
 
         val assistant = AssistantCoachStaff(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (65..82).random(),
             salary = (800_000..1_800_000).random(),
@@ -34,7 +43,7 @@ object StaffAndFacilitiesGenerator {
         )
 
         val strength = StrengthCoach(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (70..85).random(),
             salary = (600_000..1_200_000).random(),
@@ -43,7 +52,7 @@ object StaffAndFacilitiesGenerator {
         )
 
         val scout = ScoutStaff(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (70..88).random(),
             salary = (500_000..1_100_000).random(),
@@ -52,7 +61,7 @@ object StaffAndFacilitiesGenerator {
         )
 
         val doctor = TeamDoctor(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "Dr. ${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (72..90).random(),
             salary = (700_000..1_500_000).random(),
@@ -61,7 +70,7 @@ object StaffAndFacilitiesGenerator {
         )
 
         val gm = ExecutiveStaff(
-            id = (1000..9999).random(),
+            id = nextUniqueInitialId(),
             name = "${coachFirstNames.random()} ${coachLastNames.random()}",
             level = (72..90).random(),
             salary = (2_000_000..4_500_000).random(),
@@ -82,11 +91,19 @@ object StaffAndFacilitiesGenerator {
 
     fun generateAvailableStaffMarket(): List<StaffMember> {
         val list = mutableListOf<StaffMember>()
-        // Generate 3 Head Coaches
+        val usedIds = mutableSetOf<Int>()
+        fun nextUniqueMarketId(): Int {
+            var id: Int
+            do {
+                id = (10000..99999).random()
+            } while (!usedIds.add(id))
+            return id
+        }
+
         repeat(3) {
             list.add(
                 HeadCoachStaff(
-                    id = (10000..99999).random(),
+                    id = nextUniqueMarketId(),
                     name = "${coachFirstNames.random()} ${coachLastNames.random()}",
                     level = (65..92).random(),
                     salary = (2_500_000..9_000_000).random(),
@@ -102,11 +119,10 @@ object StaffAndFacilitiesGenerator {
                 )
             )
         }
-        // Generate 2 Assistants
         repeat(2) {
             list.add(
                 AssistantCoachStaff(
-                    id = (10000..99999).random(),
+                    id = nextUniqueMarketId(),
                     name = "${coachFirstNames.random()} ${coachLastNames.random()}",
                     level = (60..85).random(),
                     salary = (500_000..1_500_000).random(),
@@ -115,11 +131,10 @@ object StaffAndFacilitiesGenerator {
                 )
             )
         }
-        // Generate 2 Strength Coaches
         repeat(2) {
             list.add(
                 StrengthCoach(
-                    id = (10000..99999).random(),
+                    id = nextUniqueMarketId(),
                     name = "${coachFirstNames.random()} ${coachLastNames.random()}",
                     level = (65..88).random(),
                     salary = (400_000..1_100_000).random(),
@@ -128,11 +143,10 @@ object StaffAndFacilitiesGenerator {
                 )
             )
         }
-        // Generate 2 Scouts
         repeat(2) {
             list.add(
                 ScoutStaff(
-                    id = (10000..99999).random(),
+                    id = nextUniqueMarketId(),
                     name = "${coachFirstNames.random()} ${coachLastNames.random()}",
                     level = (65..90).random(),
                     salary = (400_000..1_000_000).random(),
@@ -141,11 +155,10 @@ object StaffAndFacilitiesGenerator {
                 )
             )
         }
-        // Generate 2 Doctors
         repeat(2) {
             list.add(
                 TeamDoctor(
-                    id = (10000..99999).random(),
+                    id = nextUniqueMarketId(),
                     name = "Dr. ${coachFirstNames.random()} ${coachLastNames.random()}",
                     level = (70..92).random(),
                     salary = (600_000..1_600_000).random(),

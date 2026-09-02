@@ -7,6 +7,7 @@ import com.example.data.NbaDataGenerator
 import com.example.data.local.BasketDatabase
 import com.example.data.repository.GameStateRepository
 import com.example.models.*
+import com.example.simulator.GameSimulator
 import com.example.utils.AutoSaveManager
 import com.example.utils.DataExporter
 import com.example.utils.SaveSlotManager
@@ -51,13 +52,8 @@ class DataExporterImportIntegrityTest {
 
     @Test
     fun validImportUpdatesActiveSlotMetadata() = runBlocking {
-        val snapshot = snapshot(
-            seasonNumber = 4,
-            currentDay = 23,
-            budget = 145_000_000,
-            difficulty = 3,
-            latestBoxScoreJson = "imported-box-score"
-        )
+        val importedBoxScore = validBoxScoreJson("imported-box-score", 23)
+        val snapshot = snapshot(4, 23, 145_000_000, 3, importedBoxScore)
         val file = writeSnapshot("valid-import.json", snapshot)
 
         assertTrue(DataExporter.importGame(context, file.absolutePath))
@@ -72,62 +68,30 @@ class DataExporterImportIntegrityTest {
 
         val loaded = repository.load()
         assertNotNull(loaded)
-        assertEquals("imported-box-score", loaded!!.latestBoxScoreJson)
+        assertEquals(importedBoxScore, loaded!!.latestBoxScoreJson)
     }
 
     @Test
     fun incompleteImportIsRejectedBeforeMutatingExistingCareer() = runBlocking {
-        val existing = snapshot(
-            seasonNumber = 2,
-            currentDay = 11,
-            budget = 120_000_000,
-            difficulty = 2,
-            latestBoxScoreJson = "existing-box-score"
-        )
-        repository.save(existing)
-        val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
-        val existingSeason = gson.fromJson(existing.seasonJson, Season::class.java)
-        val existingFinance = gson.fromJson(existing.financeJson, Finance::class.java)
-        SaveSlotManager.updateSlot(context, testSlot, existingTeam, existingSeason, existingFinance, existing.difficulty)
+        val existingBoxScore = validBoxScoreJson("existing-box-score")
+        val existing = snapshot(2, 11, 120_000_000, 2, existingBoxScore)
+        persistExisting(existing)
 
         val incomplete = existing.copy(
             teamJson = null,
             seasonJson = null,
-            latestBoxScoreJson = "invalid-replacement"
+            latestBoxScoreJson = validBoxScoreJson("invalid-replacement")
         )
-        val file = writeSnapshot("incomplete-import.json", incomplete)
-
-        assertFalse(DataExporter.importGame(context, file.absolutePath))
-
-        val loaded = repository.load()
-        assertNotNull(loaded)
-        val loadedSeason = gson.fromJson(loaded!!.seasonJson, Season::class.java)
-        assertEquals(2, loadedSeason.seasonNumber)
-        assertEquals(11, loadedSeason.currentDay)
-        assertEquals("existing-box-score", loaded.latestBoxScoreJson)
-
-        val slot = SaveSlotManager.getSlots(context).single { it.slotId == testSlot }
-        assertTrue(slot.occupied)
-        assertEquals(2, slot.seasonNumber)
-        assertEquals(11, slot.currentDay)
-        assertEquals(120_000_000, slot.budget)
+        assertFalse(DataExporter.importGame(context, writeSnapshot("incomplete-import.json", incomplete).absolutePath))
+        assertExistingUnchanged(existing, existingBoxScore)
     }
 
     @Test
     fun detachedManagedTeamImportIsRejectedBeforeMutatingExistingCareer() = runBlocking {
-        val existing = snapshot(
-            seasonNumber = 2,
-            currentDay = 11,
-            budget = 120_000_000,
-            difficulty = 2,
-            latestBoxScoreJson = "existing-box-score"
-        )
-        repository.save(existing)
-        val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
+        val existingBoxScore = validBoxScoreJson("existing-box-score")
+        val existing = snapshot(2, 11, 120_000_000, 2, existingBoxScore)
+        persistExisting(existing)
         val existingSeason = gson.fromJson(existing.seasonJson, Season::class.java)
-        val existingFinance = gson.fromJson(existing.financeJson, Finance::class.java)
-        SaveSlotManager.updateSlot(context, testSlot, existingTeam, existingSeason, existingFinance, existing.difficulty)
-
         val importedTeam = NbaDataGenerator.getAllTeams()[1]
         val inconsistent = existing.copy(
             teamJson = gson.toJson(importedTeam),
@@ -135,16 +99,69 @@ class DataExporterImportIntegrityTest {
                 teams = teams.filterNot { it.name == importedTeam.name }
                 userTeamName = importedTeam.name
             }),
-            latestBoxScoreJson = "invalid-detached-team"
+            latestBoxScoreJson = validBoxScoreJson("invalid-detached-team")
         )
-        val file = writeSnapshot("detached-team-import.json", inconsistent)
 
-        assertFalse(DataExporter.importGame(context, file.absolutePath))
+        assertFalse(DataExporter.importGame(context, writeSnapshot("detached-team-import.json", inconsistent).absolutePath))
+        assertExistingUnchanged(existing, existingBoxScore)
+    }
 
+    @Test
+    fun malformedSecondaryJsonIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        val existingBoxScore = validBoxScoreJson("existing-box-score")
+        val existing = snapshot(2, 11, 120_000_000, 2, existingBoxScore)
+        persistExisting(existing)
+        val malformed = existing.copy(
+            newsFeedJson = "{",
+            latestBoxScoreJson = validBoxScoreJson("invalid-replacement")
+        )
+
+        assertFalse(DataExporter.importGame(context, writeSnapshot("malformed-secondary-import.json", malformed).absolutePath))
+        assertExistingUnchanged(existing, existingBoxScore)
+    }
+
+    @Test
+    fun wrongShapedSecondaryJsonIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        val existingBoxScore = validBoxScoreJson("existing-box-score")
+        val existing = snapshot(2, 11, 120_000_000, 2, existingBoxScore)
+        persistExisting(existing)
+        val wrongShaped = existing.copy(
+            newsFeedJson = "\"corrupt\"",
+            latestBoxScoreJson = validBoxScoreJson("invalid-replacement")
+        )
+
+        assertFalse(DataExporter.importGame(context, writeSnapshot("wrong-shaped-secondary-import.json", wrongShaped).absolutePath))
+        assertExistingUnchanged(existing, existingBoxScore)
+    }
+
+    @Test
+    fun incompleteBoxScoreIsRejectedBeforeMutatingExistingCareer() = runBlocking {
+        val existingBoxScore = validBoxScoreJson("existing-box-score")
+        val existing = snapshot(2, 11, 120_000_000, 2, existingBoxScore)
+        persistExisting(existing)
+        val incompleteBoxScore = existing.copy(latestBoxScoreJson = "{}")
+
+        assertFalse(DataExporter.importGame(context, writeSnapshot("incomplete-box-score-import.json", incompleteBoxScore).absolutePath))
+        assertExistingUnchanged(existing, existingBoxScore)
+    }
+
+    private suspend fun persistExisting(snapshot: GameStateRepository.GameStateSnapshot) {
+        repository.save(snapshot)
+        val team = gson.fromJson(snapshot.teamJson, NbaTeam::class.java)
+        val season = gson.fromJson(snapshot.seasonJson, Season::class.java)
+        val finance = gson.fromJson(snapshot.financeJson, Finance::class.java)
+        SaveSlotManager.updateSlot(context, testSlot, team, season, finance, snapshot.difficulty)
+    }
+
+    private suspend fun assertExistingUnchanged(
+        existing: GameStateRepository.GameStateSnapshot,
+        existingBoxScore: String
+    ) {
+        val existingTeam = gson.fromJson(existing.teamJson, NbaTeam::class.java)
         val loaded = repository.load()
         assertNotNull(loaded)
         assertEquals(existing.teamJson, loaded!!.teamJson)
-        assertEquals("existing-box-score", loaded.latestBoxScoreJson)
+        assertEquals(existingBoxScore, loaded.latestBoxScoreJson)
 
         val slot = SaveSlotManager.getSlots(context).single { it.slotId == testSlot }
         assertTrue(slot.occupied)
@@ -163,13 +180,47 @@ class DataExporterImportIntegrityTest {
     ): GameStateRepository.GameStateSnapshot {
         val teams = NbaDataGenerator.getAllTeams()
         val managed = teams.first()
+        val nextPlayerId = teams.flatMap { it.players }.maxOf { it.id } + 1
         val season = Season(
             teams = teams,
             currentDay = currentDay,
-            gamesPlayed = currentDay,
-            seasonNumber = seasonNumber
+            gamesPlayed = currentDay * (teams.size / 2),
+            seasonNumber = seasonNumber,
+            nextPlayerId = nextPlayerId
         ).apply {
             userTeamName = managed.name
+            standings.values.forEachIndexed { index, record ->
+                record.gamesPlayed = currentDay
+                if (index % 2 == 0) record.wins = currentDay else record.losses = currentDay
+                record.totalPointsScored = currentDay * 95
+                record.totalPointsConceded = currentDay * 95
+            }
+            repeat(currentDay) { dayIndex ->
+                val opponent = teams[1 + (dayIndex % (teams.size - 1))]
+                val homePlayer = managed.players.first()
+                val awayPlayer = opponent.players.first()
+                history += GameSimulator.GameResult(
+                    homeTeam = managed,
+                    awayTeam = opponent,
+                    homeScore = 100,
+                    awayScore = 90,
+                    attendance = 15_000,
+                    homeStats = mapOf(homePlayer to GameSimulator.PlayerStats(100, 0, 0, 0, 0, 0, 10)),
+                    awayStats = mapOf(awayPlayer to GameSimulator.PlayerStats(90, 0, 0, 0, 0, 0, -10)),
+                    injuries = emptyList(),
+                    narration = "Import fixture day ${dayIndex + 1}"
+                )
+            }
+        }
+        val contracts = teams.flatMap { team ->
+            team.players.map { player ->
+                PlayerContract(
+                    playerId = player.id,
+                    teamId = team.abbreviation,
+                    salary = 1_000_000L,
+                    yearsRemaining = 2
+                )
+            }
         }
         return GameStateRepository.GameStateSnapshot(
             teamJson = gson.toJson(managed),
@@ -182,7 +233,7 @@ class DataExporterImportIntegrityTest {
             startingFiveJson = gson.toJson(managed.players.take(5)),
             freeAgentsJson = gson.toJson(emptyList<Player>()),
             draftRookiesJson = gson.toJson(emptyList<Player>()),
-            contractsJson = gson.toJson(emptyList<PlayerContract>()),
+            contractsJson = gson.toJson(contracts),
             staffMarketJson = gson.toJson(emptyList<StaffMember>()),
             notificationsJson = gson.toJson(emptyList<AssistantCoachNotification>()),
             teamStaffJson = gson.toJson(TeamStaff()),
@@ -194,6 +245,84 @@ class DataExporterImportIntegrityTest {
             difficulty = difficulty,
             injuriesEnabled = true,
             autoSubstitutionsEnabled = true
+        )
+    }
+
+    private fun validBoxScoreJson(matchId: String, currentDay: Int = 11): String {
+        val teams = NbaDataGenerator.getAllTeams()
+        val home = teams.first()
+        val away = teams[1 + ((currentDay - 1) % (teams.size - 1))]
+        val homePlayer = home.players.first()
+        val awayPlayer = away.players.first()
+        return gson.toJson(
+            MatchBoxScore(
+                matchId = matchId,
+                dateString = "2026-09-01",
+                homeTeamName = home.name,
+                awayTeamName = away.name,
+                homeScore = 100,
+                awayScore = 90,
+                homeQuarterScores = listOf(25, 25, 25, 25),
+                awayQuarterScores = listOf(23, 23, 22, 22),
+                homePlayers = listOf(
+                    PlayerBoxScore(
+                        playerId = homePlayer.id,
+                        playerName = homePlayer.name,
+                        position = homePlayer.position,
+                        minutesPlayed = 48,
+                        points = 100,
+                        rebounds = 0,
+                        offensiveRebounds = 0,
+                        defensiveRebounds = 0,
+                        assists = 0,
+                        steals = 0,
+                        blocks = 0,
+                        turnovers = 0,
+                        fouls = 0,
+                        fgMade = 0,
+                        fgAttempted = 0,
+                        threeMade = 0,
+                        threeAttempted = 0,
+                        ftMade = 0,
+                        ftAttempted = 0,
+                        plusMinus = 10
+                    )
+                ),
+                awayPlayers = listOf(
+                    PlayerBoxScore(
+                        playerId = awayPlayer.id,
+                        playerName = awayPlayer.name,
+                        position = awayPlayer.position,
+                        minutesPlayed = 48,
+                        points = 90,
+                        rebounds = 0,
+                        offensiveRebounds = 0,
+                        defensiveRebounds = 0,
+                        assists = 0,
+                        steals = 0,
+                        blocks = 0,
+                        turnovers = 0,
+                        fouls = 0,
+                        fgMade = 0,
+                        fgAttempted = 0,
+                        threeMade = 0,
+                        threeAttempted = 0,
+                        ftMade = 0,
+                        ftAttempted = 0,
+                        plusMinus = -10
+                    )
+                ),
+                homeTeamTotals = TeamBoxScore(
+                    teamName = home.name, points = 100, rebounds = 0, assists = 0, steals = 0, blocks = 0,
+                    turnovers = 0, fouls = 0, fgMade = 0, fgAttempted = 0, threeMade = 0,
+                    threeAttempted = 0, ftMade = 0, ftAttempted = 0
+                ),
+                awayTeamTotals = TeamBoxScore(
+                    teamName = away.name, points = 90, rebounds = 0, assists = 0, steals = 0, blocks = 0,
+                    turnovers = 0, fouls = 0, fgMade = 0, fgAttempted = 0, threeMade = 0,
+                    threeAttempted = 0, ftMade = 0, ftAttempted = 0
+                )
+            )
         )
     }
 
