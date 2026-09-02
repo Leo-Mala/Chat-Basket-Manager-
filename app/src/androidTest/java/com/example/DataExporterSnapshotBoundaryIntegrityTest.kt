@@ -7,6 +7,7 @@ import com.example.data.NbaDataGenerator
 import com.example.data.local.BasketDatabase
 import com.example.data.repository.GameStateRepository
 import com.example.models.*
+import com.example.simulator.GameSimulator
 import com.example.utils.AutoSaveManager
 import com.example.utils.DataExporter
 import com.example.utils.SaveSlotManager
@@ -101,11 +102,66 @@ class DataExporterSnapshotBoundaryIntegrityTest {
         }
         val reusedRosterId = existingSeason.teams.first().players.first()
 
+        val overflowingStandings = gson.fromJson(existing.seasonJson, JsonObject::class.java).apply {
+            val firstRecord = getAsJsonObject("standings").entrySet().first().value.asJsonObject
+            firstRecord.addProperty("wins", Int.MAX_VALUE)
+            firstRecord.addProperty("losses", 0)
+            firstRecord.addProperty("gamesPlayed", Int.MAX_VALUE)
+        }
+        val inconsistentInjuryState = gson.fromJson(existing.seasonJson, JsonObject::class.java).apply {
+            val player = getAsJsonArray("teams")[0].asJsonObject
+                .getAsJsonArray("players")[0].asJsonObject
+            player.addProperty("injured", true)
+            player.addProperty("injuryDays", 0)
+        }
+        val overflowingAdvancedFinance = gson.fromJson(existing.financeAdvancedJson, JsonObject::class.java).apply {
+            val revenues = getAsJsonObject("revenues")
+            revenues.addProperty("ticketRevenue", Int.MAX_VALUE)
+            revenues.addProperty("sponsorshipRevenue", 1)
+        }
+        val unsupportedFacilityLevel = gson.fromJson(existing.facilitiesJson, JsonObject::class.java).apply {
+            val arena = getAsJsonObject("arena")
+            arena.addProperty("level", 50)
+            arena.addProperty("maxLevel", 51)
+        }
+        val unreadNewsWithoutState = gson.toJsonTree(
+            listOf(News(title = "Imported", content = "Body", dateString = "2026-09-02", type = NewsType.MEDIA_REACTION, isRead = true))
+        ).asJsonArray.apply {
+            first().asJsonObject.remove("isRead")
+        }
+        val malformedContracts = gson.fromJson(existing.contractsJson, com.google.gson.JsonArray::class.java).apply {
+            first().asJsonObject.addProperty("teamId", "detached-team")
+        }
+
+        val seasonWithDetachedInjury = gson.fromJson(existing.seasonJson, Season::class.java).apply {
+            val home = teams[0]
+            val away = teams[1]
+            val unrelated = teams[2].players.first()
+            history += GameSimulator.GameResult(
+                homeTeam = home,
+                awayTeam = away,
+                homeScore = 100,
+                awayScore = 90,
+                attendance = 10_000,
+                homeStats = emptyMap(),
+                awayStats = emptyMap(),
+                injuries = listOf(GameSimulator.Injury(unrelated, 3)),
+                narration = "Imported history"
+            )
+        }
+
         val nestedCases = listOf(
             "missing-season-progress.json" to existing.copy(seasonJson = gson.toJson(seasonMissingProgress)),
             "unsupported-conference.json" to existing.copy(seasonJson = gson.toJson(invalidConference)),
             "reused-pool-player-id.json" to existing.copy(freeAgentsJson = gson.toJson(listOf(reusedRosterId))),
-            "missing-history-season-number.json" to existing.copy(historyJson = gson.toJson(historyMissingSeasonNumber))
+            "missing-history-season-number.json" to existing.copy(historyJson = gson.toJson(historyMissingSeasonNumber)),
+            "overflowing-standings.json" to existing.copy(seasonJson = gson.toJson(overflowingStandings)),
+            "inconsistent-injury-state.json" to existing.copy(seasonJson = gson.toJson(inconsistentInjuryState)),
+            "overflowing-advanced-finance.json" to existing.copy(financeAdvancedJson = gson.toJson(overflowingAdvancedFinance)),
+            "unsupported-facility-level.json" to existing.copy(facilitiesJson = gson.toJson(unsupportedFacilityLevel)),
+            "missing-news-read-state.json" to existing.copy(newsFeedJson = gson.toJson(unreadNewsWithoutState)),
+            "wrong-contract-owner.json" to existing.copy(contractsJson = gson.toJson(malformedContracts)),
+            "detached-history-injury.json" to existing.copy(seasonJson = gson.toJson(seasonWithDetachedInjury))
         )
         nestedCases.forEach { (name, invalid) ->
             val file = File(context.cacheDir, name).apply { writeText(exportGson.toJson(invalid)) }
