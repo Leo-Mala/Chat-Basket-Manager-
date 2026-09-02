@@ -7,6 +7,7 @@ import com.example.data.NbaDataGenerator
 import com.example.data.local.BasketDatabase
 import com.example.data.repository.GameStateRepository
 import com.example.models.*
+import com.example.simulator.GameSimulator
 import com.example.utils.AutoSaveManager
 import com.example.utils.DataExporter
 import com.example.utils.SaveSlotManager
@@ -72,6 +73,47 @@ class DataExporterCorePayloadImportIntegrityTest {
         val seasonWithoutStandings = gson.fromJson(existing.seasonJson, JsonObject::class.java).apply {
             add("standings", JsonObject())
         }
+        val seasonWithDuplicatePlayerId = gson.fromJson(existing.seasonJson, JsonObject::class.java).apply {
+            val teams = getAsJsonArray("teams")
+            val firstId = teams[0].asJsonObject.getAsJsonArray("players")[0].asJsonObject.get("id").asInt
+            teams[1].asJsonObject.getAsJsonArray("players")[0].asJsonObject.addProperty("id", firstId)
+        }
+        val teamWithoutArenaCapacity = gson.fromJson(existing.teamJson, JsonObject::class.java).apply {
+            getAsJsonObject("arena").remove("capacity")
+        }
+        val managedTeamWithDifferentPersistenceId = gson.fromJson(existing.teamJson, JsonObject::class.java).apply {
+            addProperty("abbreviation", "${existingTeam.abbreviation}X")
+        }
+        val detachedHome = existingSeason.teams.first().copy(
+            name = "Detached ${existingSeason.teams.first().name}",
+            abbreviation = "ZZZ"
+        )
+        val detachedHistoryResult = GameSimulator.GameResult(
+            homeTeam = detachedHome,
+            awayTeam = existingSeason.teams[1],
+            homeScore = 101,
+            awayScore = 99,
+            attendance = 10_000,
+            homeStats = emptyMap(),
+            awayStats = emptyMap(),
+            injuries = emptyList(),
+            narration = "Integrity fixture"
+        )
+        val seasonWithDetachedHistoryTeam = gson.fromJson(existing.seasonJson, JsonObject::class.java).apply {
+            getAsJsonArray("history").add(gson.toJsonTree(detachedHistoryResult))
+        }
+        val awardPlayers = existingSeason.teams.flatMap { it.players }.take(5)
+        val incompleteAwards = gson.toJsonTree(
+            Awards(
+                mvp = awardPlayers[0],
+                defensivePlayer = awardPlayers[1],
+                sixthMan = awardPlayers[2],
+                rookieOfYear = awardPlayers[3],
+                mostImproved = awardPlayers[4]
+            )
+        ).asJsonObject.apply {
+            getAsJsonObject("mvp").remove("overall")
+        }
         val rosterPlayer = existingSeason.teams.first().players.first()
         val invalidSnapshots = listOf(
             "incomplete-season-player.json" to existing.copy(
@@ -79,6 +121,21 @@ class DataExporterCorePayloadImportIntegrityTest {
             ),
             "missing-season-standings.json" to existing.copy(
                 seasonJson = gson.toJson(seasonWithoutStandings)
+            ),
+            "duplicate-season-player-id.json" to existing.copy(
+                seasonJson = gson.toJson(seasonWithDuplicatePlayerId)
+            ),
+            "missing-arena-capacity.json" to existing.copy(
+                teamJson = gson.toJson(teamWithoutArenaCapacity)
+            ),
+            "managed-team-identity-mismatch.json" to existing.copy(
+                teamJson = gson.toJson(managedTeamWithDifferentPersistenceId)
+            ),
+            "detached-history-team.json" to existing.copy(
+                seasonJson = gson.toJson(seasonWithDetachedHistoryTeam)
+            ),
+            "incomplete-award-player.json" to existing.copy(
+                awardsJson = gson.toJson(incompleteAwards)
             ),
             "incomplete-contract.json" to existing.copy(
                 contractsJson = "[{\"playerId\":${rosterPlayer.id},\"teamId\":\"${existingTeam.name}\"}]"
@@ -98,6 +155,7 @@ class DataExporterCorePayloadImportIntegrityTest {
             assertEquals(existing.seasonJson, loaded.seasonJson)
             assertEquals(existing.contractsJson, loaded.contractsJson)
             assertEquals(existing.coachJson, loaded.coachJson)
+            assertEquals(existing.awardsJson, loaded.awardsJson)
 
             val slot = SaveSlotManager.getSlots(context).single { it.slotId == testSlot }
             assertTrue(slot.occupied)
