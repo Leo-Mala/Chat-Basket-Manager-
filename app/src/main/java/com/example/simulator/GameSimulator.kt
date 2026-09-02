@@ -184,20 +184,7 @@ class GameSimulator(
         }
 
         (homeStats + awayStats).forEach { (player, stats) ->
-            player.careerGames++
-            player.careerPoints += stats.points
-            player.careerRebounds += stats.rebounds
-            player.careerAssists += stats.assists
-            player.careerSteals += stats.steals
-            player.careerBlocks += stats.blocks
-
-            player.seasonGames++
-            player.seasonPoints += stats.points
-            player.seasonRebounds += stats.rebounds
-            player.seasonAssists += stats.assists
-            player.seasonSteals += stats.steals
-            player.seasonBlocks += stats.blocks
-
+            player.applyGameStatsSafely(stats)
             player.evolveInSeason(stats.points)
         }
 
