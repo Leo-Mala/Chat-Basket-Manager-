@@ -21,6 +21,7 @@ object AutoSaveManager {
         .registerTypeAdapterFactory(ImportSnapshotValidationFactory())
         .registerTypeAdapterFactory(ImportSnapshotBoundaryValidationFactory())
         .registerTypeAdapterFactory(ImportSnapshotReviewValidationFactory())
+        .registerTypeAdapterFactory(ImportSnapshotFinalValidationFactory())
         .create()
 
     fun init(context: Context) {
