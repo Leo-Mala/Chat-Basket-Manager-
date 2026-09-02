@@ -301,7 +301,7 @@ fun PartidaDialog(
                         val won = if (isHome) finalResult.homeScore > finalResult.awayScore else finalResult.awayScore > finalResult.homeScore
                         val xpEarned = if (won) 15 else 8
                         team.players.forEach { player ->
-                            player.xp += xpEarned
+                            player.addXpSafely(xpEarned)
                         }
                     }
 
