@@ -22,6 +22,7 @@ import org.junit.Test
 
 class ImportSnapshotReviewValidationFactoryTest {
     private val plain = Gson()
+    // Season history uses Player keys in stat maps; encode fixtures exactly like AutoSaveManager.
     private val payload = GsonBuilder()
         .enableComplexMapKeySerialization()
         .create()
