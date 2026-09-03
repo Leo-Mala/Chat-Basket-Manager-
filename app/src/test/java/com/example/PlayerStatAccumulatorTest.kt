@@ -78,6 +78,33 @@ class PlayerStatAccumulatorTest {
         assertEquals(Int.MAX_VALUE, player.seasonBlocks)
     }
 
+    @Test
+    fun boundaryXpSaturatesDuringEvolution() {
+        val player = player().copy(xp = Int.MAX_VALUE - 3)
+
+        player.evolveInSeason(40)
+
+        assertEquals(Int.MAX_VALUE, player.xp)
+    }
+
+    @Test
+    fun postGameWinBonusSaturatesWithoutReducingXp() {
+        val player = player().copy(xp = Int.MAX_VALUE - 2)
+
+        player.addXpSafely(15)
+
+        assertEquals(Int.MAX_VALUE, player.xp)
+    }
+
+    @Test
+    fun postGameLossBonusSaturatesWithoutReducingXp() {
+        val player = player().copy(xp = Int.MAX_VALUE)
+
+        player.addXpSafely(8)
+
+        assertEquals(Int.MAX_VALUE, player.xp)
+    }
+
     private fun player() = Player(
         id = 1,
         name = "Boundary Player",

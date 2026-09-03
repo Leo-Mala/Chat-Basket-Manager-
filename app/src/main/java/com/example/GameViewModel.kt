@@ -634,7 +634,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     ToastUtils.showToast(context, "🛡️ Bônus Defensivo Aplicado: Agressividade e Cobertura aumentadas!")
                 }
                 "XP_BOOST" -> {
-                    managedTeam?.players?.forEach { it.xp += 25 }
+                    managedTeam?.players?.forEach { it.addXpSafely(25) }
                     managedTeam = managedTeam?.copy()
                     ToastUtils.showToast(context, "🌱 Bônus de Treino Aplicado: Todos os jogadores ganharam +25 XP!")
                 }
@@ -793,7 +793,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             currentSeason.advanceDay()
             val won = if (isHome) realResult.homeScore > realResult.awayScore else realResult.awayScore > realResult.homeScore
             val xpEarned = if (won) 15 else 8
-            currentManaged.players.forEach { it.xp += xpEarned }
+            currentManaged.players.forEach { it.addXpSafely(xpEarned) }
 
             val coachFeedbackList = CoachFeedbackGenerator.generatePostMatchFeedback(
                 gameResult = realResult,
@@ -883,7 +883,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             currentSeason.advanceDay()
             val won = if (isHome) realResult.homeScore > realResult.awayScore else realResult.awayScore > realResult.homeScore
             val xpEarned = if (won) 15 else 8
-            managedTeam?.players?.forEach { it.xp += xpEarned }
+            managedTeam?.players?.forEach { it.addXpSafely(xpEarned) }
 
             managedTeam?.let { team ->
                 val feedback = CoachFeedbackGenerator.generatePostMatchFeedback(
@@ -982,7 +982,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         batch.userResult.awayScore > batch.userResult.homeScore
                     }
-                    currentManaged.players.forEach { it.xp += if (won) 15 else 8 }
+                    currentManaged.players.forEach { it.addXpSafely(if (won) 15 else 8) }
 
                     val feedback = CoachFeedbackGenerator.generatePostMatchFeedback(
                         gameResult = batch.userResult,

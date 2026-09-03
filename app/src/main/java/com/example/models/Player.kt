@@ -35,6 +35,14 @@ data class Player(
 
     fun isAvailable(): Boolean = !injured || injuryDays <= 0
 
+    /** Credits non-negative XP without allowing a valid persisted value to wrap negative. */
+    fun addXpSafely(amount: Int) {
+        require(amount >= 0) { "XP credit must be non-negative" }
+        xp = (xp.toLong() + amount.toLong())
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+    }
+
     fun train(attribute: String, cost: Int): Boolean {
         if (xp < cost) return false
         xp -= cost
@@ -150,7 +158,7 @@ data class Player(
 
     fun evolveInSeason(ptsInGame: Int = 0) {
         val earnedXp = (8 + ptsInGame / 4).coerceIn(8, 25)
-        xp += earnedXp
+        addXpSafely(earnedXp)
 
         // Ten-game checkpoints keep development gradual. Chances are scaled by a stable hidden
         // career profile so not every 19-year-old follows essentially the same +10 OVR curve.
