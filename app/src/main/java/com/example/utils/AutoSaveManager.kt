@@ -27,7 +27,6 @@ object AutoSaveManager {
 
     fun init(context: Context) {
         appContext = context.applicationContext
-        SaveSlotManager.clearPendingNewSlot(appContext)
         repository = GameStateRepository(appContext)
     }
     fun getRepository(context: Context): GameStateRepository {
