@@ -2,6 +2,7 @@ package com.example.data.local
 
 import androidx.room.Entity
 import androidx.room.Index
+import com.example.domain.rules.PlayerGenerationRules
 
 @Entity(tableName = "teams")
 data class TeamEntity(
@@ -52,8 +53,8 @@ data class PlayerEntity(
     val seasonGames: Int
 ) {
     init {
-        require(id < Int.MAX_VALUE - 1) {
-            "player id must preserve allocator headroom below Int.MAX_VALUE - 1"
+        require(id < Int.MAX_VALUE - PlayerGenerationRules.FREE_AGENT_BATCH_SIZE) {
+            "player id must preserve ${PlayerGenerationRules.FREE_AGENT_BATCH_SIZE} allocator slots below Int.MAX_VALUE"
         }
     }
 }
@@ -122,25 +123,30 @@ data class GameEntity(
     val homeScore: Int,
     val awayScore: Int,
     val attendance: Int,
-    val narration: String,
-    val roundName: String? = null
+    val narrationJson: String
 )
 
-@Entity(tableName = "player_game_stats", primaryKeys = ["gameId", "playerId"])
+@Entity(tableName = "player_game_stats", primaryKeys = ["gameId", "playerId"], indices = [Index(value = ["playerId"])])
 data class PlayerGameStatEntity(
     val gameId: String,
     val playerId: Int,
-    val teamId: String?,
+    val teamId: String,
     val points: Int,
     val rebounds: Int,
     val assists: Int,
     val steals: Int,
     val blocks: Int,
     val turnovers: Int,
-    val plusMinus: Int
+    val fgMade: Int,
+    val fgAttempts: Int,
+    val threeMade: Int,
+    val threeAttempts: Int,
+    val ftMade: Int,
+    val ftAttempts: Int,
+    val minutes: Int
 )
 
-@Entity(tableName = "game_injuries", primaryKeys = ["gameId", "playerId"])
+@Entity(tableName = "game_injuries", primaryKeys = ["gameId", "playerId"], indices = [Index(value = ["playerId"])])
 data class GameInjuryEntity(
     val gameId: String,
     val playerId: Int,
@@ -162,17 +168,34 @@ data class AwardEntity(
 @Entity(tableName = "season_history")
 data class SeasonHistoryEntity(
     @androidx.room.PrimaryKey val seasonNumber: Int,
+    val userTeam: String,
+    val userWins: Int,
+    val userLosses: Int,
+    val playoffResult: String,
     val champion: String,
-    val mvp: String?,
-    val finalScore: String,
-    val topScorer: String,
-    val topScorerPoints: Double
+    val mvpName: String,
+    val mvpTeam: String,
+    val mvpOverall: Int,
+    val defensivePlayerName: String,
+    val defensivePlayerTeam: String,
+    val defensivePlayerOverall: Int,
+    val sixthManName: String,
+    val sixthManTeam: String,
+    val sixthManOverall: Int,
+    val rookieOfYearName: String,
+    val rookieOfYearTeam: String,
+    val rookieOfYearOverall: Int,
+    val mostImprovedName: String,
+    val mostImprovedTeam: String,
+    val mostImprovedOverall: Int,
+    val coachOfYearName: String,
+    val coachOfYearTeam: String
 )
 
-@Entity(tableName = "season_history_team_wins", primaryKeys = ["seasonNumber", "teamId"])
+@Entity(tableName = "season_history_team_wins", primaryKeys = ["seasonNumber", "teamName"])
 data class SeasonHistoryTeamWinEntity(
     val seasonNumber: Int,
-    val teamId: String,
+    val teamName: String,
     val wins: Int
 )
 
@@ -181,28 +204,26 @@ data class SeasonHistoryPlayerEntity(
     val seasonNumber: Int,
     val playerId: Int,
     val name: String,
-    val position: String,
-    val overall: Int,
-    val shooting: Int,
-    val defense: Int,
-    val rebound: Int,
-    val passing: Int,
-    val athleticism: Int,
-    val age: Int,
-    val xp: Int,
-    val trainings: Int,
-    val careerPoints: Int,
-    val careerRebounds: Int,
-    val careerAssists: Int,
-    val careerSteals: Int,
-    val careerBlocks: Int,
-    val careerGames: Int,
-    val championships: Int,
-    val mvps: Int,
-    val seasonPoints: Int,
-    val seasonRebounds: Int,
-    val seasonAssists: Int,
-    val seasonSteals: Int,
-    val seasonBlocks: Int,
-    val seasonGames: Int
+    val teamName: String,
+    val games: Int,
+    val points: Int,
+    val rebounds: Int,
+    val assists: Int,
+    val steals: Int,
+    val blocks: Int
+)
+
+@Entity(tableName = "sponsors")
+data class SponsorEntity(
+    @androidx.room.PrimaryKey val name: String,
+    val amountPerYear: Int,
+    val yearsRemaining: Int
+)
+
+@Entity(tableName = "expenses")
+data class ExpenseEntity(
+    @androidx.room.PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val description: String,
+    val amount: Int,
+    val date: String
 )
