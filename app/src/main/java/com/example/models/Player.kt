@@ -84,10 +84,10 @@ data class Player(
     private fun developmentProfile(): Int {
         val roll = Math.floorMod(id.toLong() * 73L + 19L, 100L).toInt()
         return when {
-            roll < 18 -> 0 // low ceiling / likely stagnation
-            roll < 70 -> 1 // normal development
-            roll < 92 -> 2 // high upside
-            else -> 3      // exceptional upside
+            roll < 18 -> 0
+            roll < 70 -> 1
+            roll < 92 -> 2
+            else -> 3
         }
     }
 
@@ -98,25 +98,19 @@ data class Player(
         else -> 100
     }
 
-    /** Individual prime window. Higher-upside careers retain a credible late-blooming tail. */
     private fun developmentPeakAge(): Int {
         val variation = Math.floorMod(id.toLong() * 37L + 11L, 100L).toInt()
         return when (developmentProfile()) {
-            0 -> 26 + (variation % 4) // 26..29
-            1 -> 28 + (variation % 5) // 28..32
-            2 -> 31 + (variation % 5) // 31..35
-            else -> 33 + (variation % 4) // 33..36
+            0 -> 26 + (variation % 4)
+            1 -> 28 + (variation % 5)
+            2 -> 31 + (variation % 5)
+            else -> 33 + (variation % 4)
         }
     }
 
     private fun growthChance(baseChance: Int): Int =
         (baseChance * developmentGrowthPercent() / 100).coerceIn(0, 95)
 
-    /**
-     * High-upside players develop more slowly in the early prime and concentrate more of their
-     * remaining growth in the final three seasons before their personal peak. This shifts timing
-     * without simply adding extra career growth or inflating the league-wide 90+ population.
-     */
     private fun primeGrowthChance(baseChance: Int, currentAge: Int, peakAge: Int): Int {
         val scaled = growthChance(baseChance)
         if (developmentProfile() < 2) return scaled
@@ -127,11 +121,6 @@ data class Player(
         }
     }
 
-    /**
-     * Prime development should polish skills that actually matter for the player's role.
-     * This prevents late-career growth events from being wasted on very low-weight attributes,
-     * especially for centers and power forwards, while still keeping the OVR gain gradual.
-     */
     private fun primeAttributes(): List<String> = when (position) {
         "PG" -> listOf("passing", "shooting")
         "SG" -> listOf("shooting", "passing", "defense")
@@ -141,11 +130,6 @@ data class Player(
         else -> listOf("shooting", "defense", "rebound", "passing")
     }
 
-    /**
-     * A small deterministic late-maturation pulse gives the late-blooming tail an observable OVR
-     * peak at 34+ without increasing development for the majority of players. It only applies to
-     * high/exceptional profiles whose personal peak is already in the late-prime window.
-     */
     private fun applyLateMaturationPulse(peakAge: Int) {
         val profile = developmentProfile()
         if (profile < 2 || peakAge < 34 || age != peakAge) return
@@ -160,8 +144,6 @@ data class Player(
         val earnedXp = (8 + ptsInGame / 4).coerceIn(8, 25)
         addXpSafely(earnedXp)
 
-        // Ten-game checkpoints keep development gradual. Chances are scaled by a stable hidden
-        // career profile so not every 19-year-old follows essentially the same +10 OVR curve.
         if (seasonGames > 0 && seasonGames % 10 == 0) {
             val random = kotlin.random.Random(id * 31 + age * 997 + seasonGames * 7919 + seasonPoints)
             val all = listOf("shooting", "defense", "rebound", "passing", "athleticism")
@@ -192,8 +174,8 @@ data class Player(
                     }
                 }
                 else -> {
-                    val yearsPastPeak = (age - peakAge).coerceAtLeast(1)
-                    val physicalDeclineChance = (10 + yearsPastPeak * 6).coerceAtMost(50)
+                    val yearsPastPeak = (age.toLong() - peakAge.toLong()).coerceAtLeast(1L)
+                    val physicalDeclineChance = (10L + yearsPastPeak * 6L).coerceAtMost(50L).toInt()
                     if (seasonGames > 40 && random.nextInt(100) < physicalDeclineChance && athleticism > 45) {
                         athleticism--
                         overall = calculateOverall()
@@ -214,7 +196,7 @@ data class Player(
     }
 
     fun advanceSeason() {
-        age++
+        age = (age.toLong() + 1L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val random = kotlin.random.Random(id * 1009 + age * 9176)
         val all = listOf("shooting", "defense", "rebound", "passing", "athleticism")
         val peakAge = developmentPeakAge()
@@ -241,16 +223,16 @@ data class Player(
                 applyLateMaturationPulse(peakAge)
             }
             else -> {
-                val yearsPastPeak = (age - peakAge).coerceAtLeast(1)
-                val athleticDeclineChance = (38 + yearsPastPeak * 10).coerceAtMost(95)
+                val yearsPastPeak = (age.toLong() - peakAge.toLong()).coerceAtLeast(1L)
+                val athleticDeclineChance = (38L + yearsPastPeak * 10L).coerceAtMost(95L).toInt()
                 if (athleticism > 40 && random.nextInt(100) < athleticDeclineChance) {
                     athleticism--
-                    if (yearsPastPeak >= 3 && random.nextInt(100) < 35 && athleticism > 40) {
+                    if (yearsPastPeak >= 3L && random.nextInt(100) < 35 && athleticism > 40) {
                         athleticism--
                     }
                 }
 
-                val technicalDeclineChance = (12 + yearsPastPeak * 7).coerceAtMost(65)
+                val technicalDeclineChance = (12L + yearsPastPeak * 7L).coerceAtMost(65L).toInt()
                 if (random.nextInt(100) < technicalDeclineChance) {
                     when (all[random.nextInt(4)]) {
                         "shooting" -> shooting = (shooting - 1).coerceAtLeast(40)
