@@ -50,7 +50,13 @@ data class PlayerEntity(
     val seasonSteals: Int,
     val seasonBlocks: Int,
     val seasonGames: Int
-)
+) {
+    init {
+        require(id != Int.MAX_VALUE) {
+            "player id Int.MAX_VALUE would exhaust the persisted monotonic allocator"
+        }
+    }
+}
 
 @Entity(tableName = "coaches")
 data class CoachEntity(
