@@ -123,8 +123,10 @@ class GameStateRepository(
         }
 
         db.teamDao().upsertAll(allTeams.map { it.toEntity() })
-        db.playerDao().archiveAll()
-        db.playerDao().upsertAll(players.values.toList())
+        // This is an authoritative current snapshot. Keep every active pool plus
+        // current-season/award historical references built above, but drop historical
+        // player rows that are no longer referenced so long careers stay bounded.
+        db.playerDao().replaceAll(players.values.toList())
 
         // Contracts are owned only by players currently under a team. Free agents,
         // draft prospects and historical players must not keep orphan contracts.
@@ -424,7 +426,7 @@ class GameStateRepository(
     private fun teamId(team: NbaTeam) = team.abbreviation.ifBlank { team.name.lowercase().replace("[^a-z0-9]".toRegex(), "_") }
     private fun PlayerEntity.toModel() = Player(id, name, position, overall, shooting, defense, rebound, passing, athleticism, age, xp, trainings, injured, injuryDays, careerPoints, careerRebounds, careerAssists, careerSteals, careerBlocks, careerGames, championships, mvps, seasonPoints, seasonRebounds, seasonAssists, seasonSteals, seasonBlocks, seasonGames)
     private fun Player.toEntity(teamId: String?, poolType: String, active: Boolean, starting: Boolean) = PlayerEntity(id, teamId, poolType, active, starting, name, position, overall, shooting, defense, rebound, passing, athleticism, age, xp, trainings, injured, injuryDays, careerPoints, careerRebounds, careerAssists, careerSteals, careerBlocks, careerGames, championships, mvps, seasonPoints, seasonRebounds, seasonAssists, seasonSteals, seasonBlocks, seasonGames)
-    private fun NbaTeam.toEntity() = TeamEntity(teamId(this), name, city, abbreviation, conference, arena.name, arena.city, arena.capacity, arena.opened)
+    private fun NbaTeam.toEntity() = TeamEntity(teamId(this), name, city, abbreviation, conference, Arena(arenaName, arenaCity, arenaCapacity, arenaOpened), players)
     private fun TeamEntity.toModel(players: List<Player>) = NbaTeam(name, city, abbreviation, conference, Arena(arenaName, arenaCity, arenaCapacity, arenaOpened), players)
     private fun Coach.toEntity() = CoachEntity(id, name, offensiveSkill, defensiveSkill, motivationalSkill, salary, contractYears)
     private fun CoachEntity.toModel() = Coach(id, name, offensiveSkill, defensiveSkill, motivationalSkill, salary, contractYears)
