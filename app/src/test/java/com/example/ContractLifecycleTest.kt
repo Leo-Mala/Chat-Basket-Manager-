@@ -28,6 +28,17 @@ class ContractLifecycleTest {
     }
 
     @Test
+    fun nonPositivePersistedTermsExpireWithoutIntegerUnderflow() {
+        val zeroTerm = PlayerContract(10, "T1", 5_000_000, 0)
+        val negativeTerm = PlayerContract(11, "T1", 5_000_000, Int.MIN_VALUE)
+
+        val result = manager.advanceSeason(listOf(zeroTerm, negativeTerm))
+
+        assertTrue(result.contracts.isEmpty())
+        assertEquals(setOf(10, 11), result.expiredPlayerIds)
+    }
+
+    @Test
     fun transferOnlyChangesTeamOwnership() {
         val contract = PlayerContract(10, "OLD", 5_000_000, 3, playerOption = true, noTrade = false)
         val transferred = manager.transfer(contract, "NEW")
