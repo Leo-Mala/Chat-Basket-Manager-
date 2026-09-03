@@ -22,6 +22,9 @@ import org.junit.Test
 
 class ImportSnapshotReviewValidationFactoryTest {
     private val plain = Gson()
+    private val payload = GsonBuilder()
+        .enableComplexMapKeySerialization()
+        .create()
     private val guarded = GsonBuilder()
         .enableComplexMapKeySerialization()
         .registerTypeAdapterFactory(ImportSnapshotReviewValidationFactory())
@@ -170,22 +173,22 @@ class ImportSnapshotReviewValidationFactoryTest {
     ): GameStateRepository.GameStateSnapshot {
         val managed = season.teams.first()
         return GameStateRepository.GameStateSnapshot(
-            teamJson = plain.toJson(managed),
+            teamJson = payload.toJson(managed),
             coachJson = null,
-            financeJson = finance?.let(plain::toJson),
+            financeJson = finance?.let(payload::toJson),
             tacticsJson = null,
-            seasonJson = plain.toJson(season),
-            historyJson = plain.toJson(HistoryManager()),
+            seasonJson = payload.toJson(season),
+            historyJson = payload.toJson(HistoryManager()),
             awardsJson = null,
-            startingFiveJson = plain.toJson(managed.players.take(5)),
-            freeAgentsJson = plain.toJson(emptyList<Player>()),
-            draftRookiesJson = plain.toJson(emptyList<Player>()),
+            startingFiveJson = payload.toJson(managed.players.take(5)),
+            freeAgentsJson = payload.toJson(emptyList<Player>()),
+            draftRookiesJson = payload.toJson(emptyList<Player>()),
             contractsJson = null,
             staffMarketJson = null,
             notificationsJson = notificationsJson,
             teamStaffJson = null,
-            facilitiesJson = facilities?.let(plain::toJson),
-            financeAdvancedJson = financeAdvanced?.let(plain::toJson),
+            facilitiesJson = facilities?.let(payload::toJson),
+            financeAdvancedJson = financeAdvanced?.let(payload::toJson),
             newsFeedJson = null,
             latestBoxScoreJson = null,
             playoffResultJson = null,
