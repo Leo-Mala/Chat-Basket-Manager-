@@ -164,7 +164,7 @@ object DataExporter {
         }
         val validFinance: (Any) -> Boolean = { value ->
             value is Finance && runCatching {
-                value.budget // Negative cash is a valid debt state produced by normal gameplay.
+                value.budget
                 value.coachSalaryPaid
                 val sponsorNames = value.sponsors.map { it.name }
                 check(sponsorNames.size == sponsorNames.toSet().size)
@@ -660,7 +660,7 @@ object DataExporter {
             val assistants = root.getAsJsonArray("assistants") ?: return@runCatching false
             val executives = root.getAsJsonArray("executives") ?: return@runCatching false
             check(assistants.all { it.isJsonObject && hasRequiredStaffObjectFields(it.asJsonObject) })
-            check(executives.all { it.isJsonObject && hasRequiredStaffObjectFields(it.asJsonObject, executive = true))
+            check(executives.all { it.isJsonObject && hasRequiredStaffObjectFields(it.asJsonObject, executive = true) })
             root.get("headCoach")?.takeUnless { it.isJsonNull }?.let {
                 check(it.isJsonObject && hasRequiredStaffObjectFields(it.asJsonObject, headCoach = true))
             }
