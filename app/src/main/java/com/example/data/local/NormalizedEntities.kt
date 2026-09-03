@@ -101,7 +101,13 @@ data class SeasonEntity(
     val currentYear: Int,
     val userTeamId: String?,
     val nextPlayerId: Int
-)
+) {
+    init {
+        require(nextPlayerId in 1..(Int.MAX_VALUE - PlayerGenerationRules.FREE_AGENT_BATCH_SIZE)) {
+            "nextPlayerId must preserve ${PlayerGenerationRules.FREE_AGENT_BATCH_SIZE} allocator slots below Int.MAX_VALUE"
+        }
+    }
+}
 
 @Entity(tableName = "standings", primaryKeys = ["seasonId", "teamId"])
 data class StandingEntity(
