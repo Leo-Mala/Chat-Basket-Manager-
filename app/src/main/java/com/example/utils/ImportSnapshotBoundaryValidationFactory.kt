@@ -122,14 +122,14 @@ class ImportSnapshotBoundaryValidationFactory : TypeAdapterFactory {
             finance.revenues.broadcastingRevenue,
             finance.revenues.playoffRevenue
         )
-        val total = revenueParts.fold(0L) { acc, value ->
+        val totalRevenue = revenueParts.fold(0L) { acc, value ->
             try {
                 Math.addExact(acc, value.toLong())
             } catch (_: ArithmeticException) {
                 throw JsonParseException("Imported advanced-finance revenue overflows Long")
             }
         }
-        if (total > Int.MAX_VALUE) {
+        if (totalRevenue > Int.MAX_VALUE) {
             throw JsonParseException("Imported advanced-finance revenue exceeds the supported aggregate range")
         }
     }
