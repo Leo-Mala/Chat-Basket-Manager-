@@ -22,8 +22,9 @@ class RosterManager {
         val first = listOf("Kyrie", "Luka", "James", "Kevin", "Giannis", "Joel", "Nikola", "Stephen", "Kawhi", "Anthony", "Jayson", "Russell", "Chris", "Paul", "Trae")
         val last = listOf("Irving", "Doncic", "Harden", "Durant", "Antetokounmpo", "Embiid", "Jokic", "Curry", "Leonard", "Davis", "Tatum", "Westbrook", "George", "Paul", "Young")
         val positions = listOf("PG", "SG", "SF", "PF", "C")
-        val ids = requireNotNull(season) { "Free-agent generation requires an active season for globally unique player IDs" }.allocatePlayerIds(6)
-        return FreeAgentResult(List(6) { index ->
+        val batchSize = PlayerGenerationRules.FREE_AGENT_BATCH_SIZE
+        val ids = requireNotNull(season) { "Free-agent generation requires an active season for globally unique player IDs" }.allocatePlayerIds(batchSize)
+        return FreeAgentResult(List(batchSize) { index ->
             val id = ids.first + index
             val random = kotlin.random.Random(id)
             PlayerGenerationRules.createBalancedPlayer(

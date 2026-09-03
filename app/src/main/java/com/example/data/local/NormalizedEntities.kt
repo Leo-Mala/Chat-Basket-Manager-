@@ -2,6 +2,7 @@ package com.example.data.local
 
 import androidx.room.Entity
 import androidx.room.Index
+import com.example.domain.rules.PlayerGenerationRules
 
 @Entity(tableName = "teams")
 data class TeamEntity(
@@ -50,7 +51,13 @@ data class PlayerEntity(
     val seasonSteals: Int,
     val seasonBlocks: Int,
     val seasonGames: Int
-)
+) {
+    init {
+        require(id < Int.MAX_VALUE - PlayerGenerationRules.FREE_AGENT_BATCH_SIZE) {
+            "player id must preserve ${PlayerGenerationRules.FREE_AGENT_BATCH_SIZE} allocator slots below Int.MAX_VALUE"
+        }
+    }
+}
 
 @Entity(tableName = "coaches")
 data class CoachEntity(

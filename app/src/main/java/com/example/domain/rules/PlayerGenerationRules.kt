@@ -4,6 +4,8 @@ import com.example.models.Player
 import kotlin.random.Random
 
 object PlayerGenerationRules {
+    const val FREE_AGENT_BATCH_SIZE = 6
+
     fun createBalancedPlayer(id: Int, name: String, position: String, targetOverall: Int, age: Int, random: Random): Player {
         val target = targetOverall.coerceIn(50, 95)
         fun attribute(): Int = (target + random.nextInt(-4, 5)).coerceIn(50, 99)
