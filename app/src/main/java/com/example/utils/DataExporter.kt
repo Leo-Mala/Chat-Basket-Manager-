@@ -164,7 +164,7 @@ object DataExporter {
         }
         val validFinance: (Any) -> Boolean = { value ->
             value is Finance && runCatching {
-                value.budget // Negative cash is a valid debt state produced by normal gameplay.
+                value.budget
                 value.coachSalaryPaid
                 val sponsorNames = value.sponsors.map { it.name }
                 check(sponsorNames.size == sponsorNames.toSet().size)
@@ -551,19 +551,32 @@ object DataExporter {
         val freeAgents = snapshot.freeAgentsJson?.let { gson.fromJson<List<Player>>(it, playerType) } ?: return@runCatching false
         val draftRookies = snapshot.draftRookiesJson?.let { gson.fromJson<List<Player>>(it, playerType) } ?: return@runCatching false
         val awards = snapshot.awardsJson?.let { gson.fromJson(it, Awards::class.java) }
-        val persistedPlayerIds = buildSet {
-            addAll(season.teams.flatMap { it.players }.map { it.id })
-            addAll(freeAgents.map { it.id })
-            addAll(draftRookies.map { it.id })
-            awards?.let { addAll(listOf(it.mvp.id, it.defensivePlayer.id, it.sixthMan.id, it.rookieOfYear.id, it.mostImproved.id)) }
+        val canonicalPlayers = LinkedHashMap<Int, Player>()
+        season.teams.flatMap { it.players }.forEach { canonicalPlayers[it.id] = it }
+        freeAgents.forEach { canonicalPlayers[it.id] = it }
+        draftRookies.forEach { canonicalPlayers[it.id] = it }
+        awards?.let {
+            listOf(it.mvp, it.defensivePlayer, it.sixthMan, it.rookieOfYear, it.mostImproved)
+                .forEach { player -> canonicalPlayers.putIfAbsent(player.id, player) }
         }
+
+        fun validateHistoricalPlayer(player: Player): Boolean {
+            val canonical = canonicalPlayers[player.id]
+            return if (canonical == null) {
+                canonicalPlayers[player.id] = player
+                true
+            } else {
+                player == canonical
+            }
+        }
+
         season.history.all { result ->
             val homeIds = result.homeStats.keys.map { it.id }
             val awayIds = result.awayStats.keys.map { it.id }
-            homeIds.all { it in persistedPlayerIds } &&
-                awayIds.all { it in persistedPlayerIds } &&
-                homeIds.toSet().intersect(awayIds.toSet()).isEmpty() &&
-                result.injuries.all { it.player.id in persistedPlayerIds }
+            homeIds.toSet().intersect(awayIds.toSet()).isEmpty() &&
+                result.homeStats.keys.all(::validateHistoricalPlayer) &&
+                result.awayStats.keys.all(::validateHistoricalPlayer) &&
+                result.injuries.all { validateHistoricalPlayer(it.player) }
         }
     }.getOrDefault(false)
 

@@ -107,6 +107,16 @@ class GameStateRepository(
         draftRookies.forEach { players[it.id] = it.toEntity(null, "DRAFT", true, false) }
         // Preserve award players even if they are no longer on the current roster.
         awards?.let { a -> listOf(a.mvp, a.defensivePlayer, a.sixthMan, a.rookieOfYear, a.mostImproved).forEach { p -> players.putIfAbsent(p.id, p.toEntity(null, "HISTORICAL", false, false)) } }
+        // A current-season box score can still reference a player who has since been
+        // traded, waived or otherwise left every active pool. Persist those embedded
+        // player snapshots as historical rows so a clean import/Room round-trip can
+        // reconstruct the stats and injuries without relying on rows from an older save.
+        season?.history?.forEach { result ->
+            val referencedPlayers = result.homeStats.keys + result.awayStats.keys + result.injuries.map { it.player }
+            referencedPlayers.forEach { player ->
+                players.putIfAbsent(player.id, player.toEntity(null, "HISTORICAL", false, false))
+            }
+        }
         season?.let { current ->
             val maxId = players.keys.maxOrNull() ?: 0
             if (current.nextPlayerId <= maxId) current.nextPlayerId = maxId + 1
@@ -397,7 +407,6 @@ class GameStateRepository(
         val type = object : com.google.gson.reflect.TypeToken<List<PlayerContract>>() {}.type
         gson.fromJson<List<PlayerContract>>(json, type) ?: emptyList()
     } catch (_: Exception) { emptyList() }
-
     private fun parsePlayers(json: String): List<Player> = try {
         val type = object : com.google.gson.reflect.TypeToken<List<Player>>() {}.type
         gson.fromJson<List<Player>>(json, type) ?: emptyList()
