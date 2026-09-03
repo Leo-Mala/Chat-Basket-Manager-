@@ -12,8 +12,9 @@ import com.google.gson.stream.JsonWriter
 
 /**
  * Ensures an imported regular-season standings row can complete the remaining schedule
- * without overflowing its persisted Int point accumulators. SimulationRules caps a team
- * score at 145, so the remaining 82-game schedule gives an exact runtime headroom bound.
+ * without overflowing its persisted Int point accumulators. SimulationRules caps the base
+ * score at 145, and GameSimulator may add up to seven points when resolving a tie, so the
+ * maximum final team score that can reach the standings accumulator is 152.
  */
 class ImportStandingsHeadroomValidationFactory : TypeAdapterFactory {
     override fun <T> create(gson: Gson, type: TypeToken<T>): TypeAdapter<T>? {
@@ -37,7 +38,7 @@ class ImportStandingsHeadroomValidationFactory : TypeAdapterFactory {
 
         season.standings.forEach { (teamName, record) ->
             val gamesRemaining = (MAX_REGULAR_SEASON_GAMES - record.gamesPlayed).coerceAtLeast(0)
-            val requiredHeadroom = gamesRemaining.toLong() * MAX_TEAM_SCORE_PER_GAME
+            val requiredHeadroom = gamesRemaining.toLong() * MAX_FINAL_TEAM_SCORE_PER_GAME
             val maximumSafeTotal = Int.MAX_VALUE.toLong() - requiredHeadroom
             if (record.totalPointsScored.toLong() > maximumSafeTotal ||
                 record.totalPointsConceded.toLong() > maximumSafeTotal
@@ -51,6 +52,6 @@ class ImportStandingsHeadroomValidationFactory : TypeAdapterFactory {
 
     private companion object {
         const val MAX_REGULAR_SEASON_GAMES = 82
-        const val MAX_TEAM_SCORE_PER_GAME = 145L
+        const val MAX_FINAL_TEAM_SCORE_PER_GAME = 152L
     }
 }
