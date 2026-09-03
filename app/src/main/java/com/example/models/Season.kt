@@ -179,6 +179,8 @@ class Season(
         require(count >= 0) { "count must be non-negative" }
         if (count == 0) return IntRange.EMPTY
         val start = nextPlayerId.coerceAtLeast(1)
+        val requiredCapacity = Math.addExact(count, PlayerGenerationRules.FREE_AGENT_BATCH_SIZE)
+        Math.addExact(start, requiredCapacity)
         nextPlayerId = Math.addExact(start, count)
         return start until nextPlayerId
     }
