@@ -46,11 +46,10 @@ class ContractManager {
         val next = linkedMapOf<Int, PlayerContract>()
         val expired = linkedSetOf<Int>()
         current.forEach { contract ->
-            val remaining = contract.yearsRemaining - 1
-            if (remaining <= 0) {
+            if (contract.yearsRemaining <= 1) {
                 expired += contract.playerId
             } else {
-                next[contract.playerId] = contract.copy(yearsRemaining = remaining)
+                next[contract.playerId] = contract.copy(yearsRemaining = contract.yearsRemaining - 1)
             }
         }
         return ContractSeasonResult(next, expired)
