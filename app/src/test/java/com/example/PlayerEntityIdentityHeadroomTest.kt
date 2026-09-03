@@ -13,14 +13,26 @@ class PlayerEntityIdentityHeadroomTest {
         }
 
         assertEquals(
-            "player id Int.MAX_VALUE would exhaust the persisted monotonic allocator",
+            "player id must preserve allocator headroom below Int.MAX_VALUE - 1",
             error.message
         )
     }
 
     @Test
-    fun maxIntMinusOneRemainsRepresentable() {
-        assertEquals(Int.MAX_VALUE - 1, playerEntity(Int.MAX_VALUE - 1).id)
+    fun lastAllocatablePlayerIdIsRejectedBeforePersistenceExhaustsAllocator() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            playerEntity(Int.MAX_VALUE - 1)
+        }
+
+        assertEquals(
+            "player id must preserve allocator headroom below Int.MAX_VALUE - 1",
+            error.message
+        )
+    }
+
+    @Test
+    fun maxIntMinusTwoRemainsRepresentable() {
+        assertEquals(Int.MAX_VALUE - 2, playerEntity(Int.MAX_VALUE - 2).id)
     }
 
     private fun playerEntity(id: Int) = PlayerEntity(
