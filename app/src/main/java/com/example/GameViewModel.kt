@@ -132,6 +132,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadSavedGame() = retryLoadSavedGame()
 
     fun retryLoadSavedGame() {
+        val appContext = getApplication<Application>().applicationContext
+        if (SaveSlotManager.peekPendingNewSlot(appContext) != null) {
+            // An unfinished new-career selection is intentionally durable across Activity/process
+            // recreation. Do not let the old active slot win the race and replace the setup UI.
+            // The target slot remains untouched until startNewGame() confirms creation.
+            resetCareerState()
+            return
+        }
         loadErrorMessage = null
         savedGameLoadState = SavedGameLoadState.LOADING
         viewModelScope.launch(Dispatchers.IO) { loadSavedGameFromRoom() }
