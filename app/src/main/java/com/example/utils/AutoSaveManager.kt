@@ -73,6 +73,7 @@ object AutoSaveManager {
     suspend fun hasSavedGame(): Boolean = loadGameState() != null
     suspend fun clearGameState() = saveMutex.withLock {
         val slotId = SaveSlotManager.getActiveSlot(appContext)
+        SaveSlotManager.clearPendingNewSlot(appContext)
         getRepositoryFromInitialized().clear()
         SaveSlotManager.clearSlotMetadata(appContext, slotId)
     }
