@@ -4,7 +4,7 @@ import com.example.data.repository.GameStateRepository
 import com.example.models.AdvancedExpenses
 import com.example.models.FinanceAdvanced
 import com.example.models.Season
-import com.example.utils.ImportSnapshotBoundaryValidationFactory
+import com.example.utils.ImportSnapshotReviewValidationFactory
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import org.junit.Assert.assertEquals
@@ -14,7 +14,7 @@ import org.junit.Test
 class ImportAdvancedFinanceBoundaryValidationTest {
     private val plainGson = Gson()
     private val validatingGson = GsonBuilder()
-        .registerTypeAdapterFactory(ImportSnapshotBoundaryValidationFactory())
+        .registerTypeAdapterFactory(ImportSnapshotReviewValidationFactory())
         .create()
 
     @Test
