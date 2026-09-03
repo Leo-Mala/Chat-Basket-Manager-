@@ -27,7 +27,6 @@ object AutoSaveManager {
 
     fun init(context: Context) {
         appContext = context.applicationContext
-        SaveSlotManager.clearPendingNewSlot(appContext)
         repository = GameStateRepository(appContext)
     }
     fun getRepository(context: Context): GameStateRepository {
@@ -74,6 +73,7 @@ object AutoSaveManager {
     suspend fun hasSavedGame(): Boolean = loadGameState() != null
     suspend fun clearGameState() = saveMutex.withLock {
         val slotId = SaveSlotManager.getActiveSlot(appContext)
+        SaveSlotManager.clearPendingNewSlot(appContext)
         getRepositoryFromInitialized().clear()
         SaveSlotManager.clearSlotMetadata(appContext, slotId)
     }
