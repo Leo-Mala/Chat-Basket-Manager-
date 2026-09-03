@@ -7,12 +7,16 @@ import com.example.models.Facility
 import com.example.models.FacilityType
 import com.example.models.Finance
 import com.example.models.FinanceAdvanced
-import com.example.models.TeamFacilities
+import com.example.models.HistoryManager
+import com.example.models.Player
 import com.example.models.Season
+import com.example.models.TeamFacilities
+import com.example.simulator.GameSimulator
 import com.example.utils.ImportSnapshotReviewValidationFactory
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonParseException
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -91,6 +95,59 @@ class ImportSnapshotReviewValidationFactoryTest {
         assertRejected(baseSnapshot(finance = Finance(budget = Int.MAX_VALUE)))
     }
 
+    @Test
+    fun acceptsSelfConsistentHistoryOnlyPlayer() {
+        val season = baseSeason()
+        val home = season.teams[0]
+        val away = season.teams[1]
+        val maxRosterId = season.teams.flatMap { it.players }.maxOf { it.id }
+        val detached = home.players.first().copy(
+            id = maxRosterId + 100,
+            name = "Detached History Player"
+        )
+        season.history += gameResult(home, away, detached, detached)
+
+        val decoded = guarded.fromJson(
+            plain.toJson(baseSnapshot(season = season)),
+            GameStateRepository.GameStateSnapshot::class.java
+        )
+
+        assertNotNull(decoded)
+    }
+
+    @Test
+    fun rejectsConflictingHistoryOnlyIdentityReuse() {
+        val season = baseSeason()
+        val home = season.teams[0]
+        val away = season.teams[1]
+        val maxRosterId = season.teams.flatMap { it.players }.maxOf { it.id }
+        val detached = home.players.first().copy(
+            id = maxRosterId + 100,
+            name = "Detached History Player"
+        )
+        val conflicting = detached.copy(name = "Conflicting Detached Identity")
+        season.history += gameResult(home, away, detached, conflicting)
+
+        assertRejected(baseSnapshot(season = season))
+    }
+
+    private fun gameResult(
+        home: com.example.models.NbaTeam,
+        away: com.example.models.NbaTeam,
+        statPlayer: Player,
+        injuryPlayer: Player
+    ) = GameSimulator.GameResult(
+        homeTeam = home,
+        awayTeam = away,
+        homeScore = 101,
+        awayScore = 99,
+        attendance = 18_000,
+        homeStats = mapOf(statPlayer to GameSimulator.PlayerStats(12, 3, 4, 1, 0, 2, 5)),
+        awayStats = mapOf(away.players.first() to GameSimulator.PlayerStats(9, 2, 1, 0, 0, 1, -5)),
+        injuries = listOf(GameSimulator.Injury(injuryPlayer, 4)),
+        narration = "History-only player import fixture"
+    )
+
     private fun assertRejected(snapshot: GameStateRepository.GameStateSnapshot) {
         assertThrows(JsonParseException::class.java) {
             guarded.fromJson(plain.toJson(snapshot), GameStateRepository.GameStateSnapshot::class.java)
@@ -118,11 +175,11 @@ class ImportSnapshotReviewValidationFactoryTest {
             financeJson = finance?.let(plain::toJson),
             tacticsJson = null,
             seasonJson = plain.toJson(season),
-            historyJson = null,
+            historyJson = plain.toJson(HistoryManager()),
             awardsJson = null,
-            startingFiveJson = null,
-            freeAgentsJson = null,
-            draftRookiesJson = null,
+            startingFiveJson = plain.toJson(managed.players.take(5)),
+            freeAgentsJson = plain.toJson(emptyList<Player>()),
+            draftRookiesJson = plain.toJson(emptyList<Player>()),
             contractsJson = null,
             staffMarketJson = null,
             notificationsJson = notificationsJson,
