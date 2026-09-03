@@ -1,38 +1,34 @@
 package com.example
 
 import com.example.data.local.PlayerEntity
+import com.example.domain.rules.PlayerGenerationRules
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class PlayerEntityIdentityHeadroomTest {
+    private val message = "player id must preserve ${PlayerGenerationRules.FREE_AGENT_BATCH_SIZE} allocator slots below Int.MAX_VALUE"
+
     @Test
     fun maxIntPlayerIdIsRejectedBeforePersistenceCanOverflowAllocator() {
         val error = assertThrows(IllegalArgumentException::class.java) {
             playerEntity(Int.MAX_VALUE)
         }
-
-        assertEquals(
-            "player id must preserve allocator headroom below Int.MAX_VALUE - 1",
-            error.message
-        )
+        assertEquals(message, error.message)
     }
 
     @Test
-    fun lastAllocatablePlayerIdIsRejectedBeforePersistenceExhaustsAllocator() {
+    fun idThatWouldLeaveTooLittleFreeAgentBatchHeadroomIsRejected() {
         val error = assertThrows(IllegalArgumentException::class.java) {
-            playerEntity(Int.MAX_VALUE - 1)
+            playerEntity(Int.MAX_VALUE - 2)
         }
-
-        assertEquals(
-            "player id must preserve allocator headroom below Int.MAX_VALUE - 1",
-            error.message
-        )
+        assertEquals(message, error.message)
     }
 
     @Test
-    fun maxIntMinusTwoRemainsRepresentable() {
-        assertEquals(Int.MAX_VALUE - 2, playerEntity(Int.MAX_VALUE - 2).id)
+    fun highestIdThatStillPreservesFullFreeAgentBatchIsRepresentable() {
+        val highestSafeId = Int.MAX_VALUE - PlayerGenerationRules.FREE_AGENT_BATCH_SIZE - 1
+        assertEquals(highestSafeId, playerEntity(highestSafeId).id)
     }
 
     private fun playerEntity(id: Int) = PlayerEntity(
