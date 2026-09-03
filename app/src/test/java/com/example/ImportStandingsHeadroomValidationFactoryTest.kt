@@ -18,7 +18,7 @@ class ImportStandingsHeadroomValidationFactoryTest {
     @Test
     fun exactRemainingScheduleHeadroomIsAccepted() {
         val season = Season(emptyList(), currentDay = 80)
-        val maximumSafeTotal = Int.MAX_VALUE - (2 * 145)
+        val maximumSafeTotal = Int.MAX_VALUE - (2 * 152)
         season.standings["Test Team"] = Season.SeasonRecord(
             wins = 40,
             losses = 40,
@@ -36,15 +36,35 @@ class ImportStandingsHeadroomValidationFactoryTest {
     }
 
     @Test
-    fun insufficientRemainingScheduleHeadroomIsRejected() {
+    fun onePointBeyondFinalScoreHeadroomIsRejected() {
         val season = Season(emptyList(), currentDay = 80)
-        val unsafeTotal = Int.MAX_VALUE - (2 * 145) + 1
+        val unsafeTotal = Int.MAX_VALUE - (2 * 152) + 1
         season.standings["Test Team"] = Season.SeasonRecord(
             wins = 40,
             losses = 40,
             gamesPlayed = 80,
             totalPointsScored = unsafeTotal,
             totalPointsConceded = unsafeTotal
+        )
+
+        assertThrows(Exception::class.java) {
+            validatingGson.fromJson(
+                plainGson.toJson(snapshot(season)),
+                GameStateRepository.GameStateSnapshot::class.java
+            )
+        }
+    }
+
+    @Test
+    fun preTieBaseScoreHeadroomIsRejected() {
+        val season = Season(emptyList(), currentDay = 80)
+        val oldBaseScoreThreshold = Int.MAX_VALUE - (2 * 145)
+        season.standings["Test Team"] = Season.SeasonRecord(
+            wins = 40,
+            losses = 40,
+            gamesPlayed = 80,
+            totalPointsScored = oldBaseScoreThreshold,
+            totalPointsConceded = oldBaseScoreThreshold
         )
 
         assertThrows(Exception::class.java) {
