@@ -119,7 +119,7 @@ interface SeasonHistoryDao {
 
 @Dao
 interface SeasonHistoryTeamWinDao {
-    @Query("SELECT * FROM season_history_team_wins ORDER BY seasonNumber, teamId") suspend fun all(): List<SeasonHistoryTeamWinEntity>
+    @Query("SELECT * FROM season_history_team_wins ORDER BY seasonNumber, teamName") suspend fun all(): List<SeasonHistoryTeamWinEntity>
     @Upsert suspend fun upsertAll(items: List<SeasonHistoryTeamWinEntity>)
     @Query("DELETE FROM season_history_team_wins") suspend fun clear()
 }
