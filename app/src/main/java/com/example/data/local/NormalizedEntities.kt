@@ -52,8 +52,8 @@ data class PlayerEntity(
     val seasonGames: Int
 ) {
     init {
-        require(id != Int.MAX_VALUE) {
-            "player id Int.MAX_VALUE would exhaust the persisted monotonic allocator"
+        require(id < Int.MAX_VALUE - 1) {
+            "player id must preserve allocator headroom below Int.MAX_VALUE - 1"
         }
     }
 }
