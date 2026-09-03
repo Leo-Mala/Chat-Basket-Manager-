@@ -14,6 +14,7 @@ import com.example.utils.AutoSaveManager
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -106,4 +107,87 @@ class DetachedGamePlayerPersistenceTest {
         assertEquals(12, result.homeStats.entries.single { it.key.id == detached.id }.value.points)
         assertTrue(result.injuries.any { it.player.id == detached.id && it.daysOut == 4 })
     }
+
+    @Test
+    fun historicalPlayerIsPrunedAfterCurrentSeasonStopsReferencingIt() = runBlocking {
+        val teams = NbaDataGenerator.getAllTeams()
+        val managed = teams.first()
+        val opponent = teams[1]
+        val maxRosterId = teams.flatMap { it.players }.maxOf { it.id }
+        val detached = managed.players.first().copy(
+            id = maxRosterId + 100,
+            name = "Completed Season Detached Player"
+        )
+        val seasonOne = Season(
+            teams = teams,
+            currentDay = 1,
+            gamesPlayed = 1,
+            seasonNumber = 1,
+            nextPlayerId = detached.id + 1
+        ).apply {
+            userTeamName = managed.name
+            history += GameSimulator.GameResult(
+                homeTeam = managed,
+                awayTeam = opponent,
+                homeScore = 103,
+                awayScore = 97,
+                attendance = 18_000,
+                homeStats = mapOf(detached to GameSimulator.PlayerStats(11, 2, 3, 1, 0, 1, 4)),
+                awayStats = emptyMap(),
+                injuries = emptyList(),
+                narration = "Historical pruning fixture"
+            )
+        }
+        val firstSnapshot = snapshot(managed, seasonOne)
+
+        repository.save(firstSnapshot)
+        assertTrue(database.playerDao().all().any { it.id == detached.id && !it.active })
+
+        val seasonTwo = Season(
+            teams = teams,
+            currentDay = 0,
+            gamesPlayed = 0,
+            seasonNumber = 2,
+            nextPlayerId = detached.id + 1
+        ).apply { userTeamName = managed.name }
+        repository.save(snapshot(managed, seasonTwo))
+
+        val persistedPlayers = database.playerDao().all()
+        assertFalse(persistedPlayers.any { it.id == detached.id })
+        assertEquals(teams.sumOf { it.players.size }, persistedPlayers.size)
+
+        val loaded = repository.load()
+        assertNotNull(loaded)
+        val loadedSeason = gson.fromJson(loaded!!.seasonJson, Season::class.java)
+        assertEquals(2, loadedSeason.seasonNumber)
+        assertTrue(loadedSeason.history.isEmpty())
+    }
+
+    private fun snapshot(
+        managed: com.example.models.NbaTeam,
+        season: Season
+    ) = GameStateRepository.GameStateSnapshot(
+        teamJson = gson.toJson(managed),
+        coachJson = null,
+        financeJson = null,
+        tacticsJson = null,
+        seasonJson = gson.toJson(season),
+        historyJson = null,
+        awardsJson = null,
+        startingFiveJson = gson.toJson(managed.players.take(5)),
+        freeAgentsJson = gson.toJson(emptyList<Player>()),
+        draftRookiesJson = gson.toJson(emptyList<Player>()),
+        contractsJson = null,
+        staffMarketJson = null,
+        notificationsJson = null,
+        teamStaffJson = null,
+        facilitiesJson = null,
+        financeAdvancedJson = null,
+        newsFeedJson = null,
+        latestBoxScoreJson = null,
+        playoffResultJson = null,
+        difficulty = 1,
+        injuriesEnabled = true,
+        autoSubstitutionsEnabled = true
+    )
 }
