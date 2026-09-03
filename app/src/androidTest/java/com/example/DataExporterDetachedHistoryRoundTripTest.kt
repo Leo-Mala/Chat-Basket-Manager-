@@ -55,12 +55,14 @@ class DataExporterDetachedHistoryRoundTripTest {
     }
 
     @After
-    fun tearDown() = runBlocking {
-        repository.clear()
-        SaveSlotManager.clearSlotMetadata(context, testSlot)
-        SaveSlotManager.clearPendingNewSlot(context)
-        SaveSlotManager.setActiveSlot(context, originalSlot)
-        exportedFile?.delete()
+    fun tearDown() {
+        runBlocking {
+            repository.clear()
+            SaveSlotManager.clearSlotMetadata(context, testSlot)
+            SaveSlotManager.clearPendingNewSlot(context)
+            SaveSlotManager.setActiveSlot(context, originalSlot)
+            exportedFile?.delete()
+        }
     }
 
     @Test
