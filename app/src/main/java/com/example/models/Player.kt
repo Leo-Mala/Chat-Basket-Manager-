@@ -192,8 +192,8 @@ data class Player(
                     }
                 }
                 else -> {
-                    val yearsPastPeak = (age - peakAge).coerceAtLeast(1)
-                    val physicalDeclineChance = (10 + yearsPastPeak * 6).coerceAtMost(50)
+                    val yearsPastPeak = (age.toLong() - peakAge.toLong()).coerceAtLeast(1L)
+                    val physicalDeclineChance = (10L + yearsPastPeak * 6L).coerceAtMost(50L).toInt()
                     if (seasonGames > 40 && random.nextInt(100) < physicalDeclineChance && athleticism > 45) {
                         athleticism--
                         overall = calculateOverall()
@@ -214,7 +214,7 @@ data class Player(
     }
 
     fun advanceSeason() {
-        age++
+        age = (age.toLong() + 1L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val random = kotlin.random.Random(id * 1009 + age * 9176)
         val all = listOf("shooting", "defense", "rebound", "passing", "athleticism")
         val peakAge = developmentPeakAge()
@@ -241,16 +241,16 @@ data class Player(
                 applyLateMaturationPulse(peakAge)
             }
             else -> {
-                val yearsPastPeak = (age - peakAge).coerceAtLeast(1)
-                val athleticDeclineChance = (38 + yearsPastPeak * 10).coerceAtMost(95)
+                val yearsPastPeak = (age.toLong() - peakAge.toLong()).coerceAtLeast(1L)
+                val athleticDeclineChance = (38L + yearsPastPeak * 10L).coerceAtMost(95L).toInt()
                 if (athleticism > 40 && random.nextInt(100) < athleticDeclineChance) {
                     athleticism--
-                    if (yearsPastPeak >= 3 && random.nextInt(100) < 35 && athleticism > 40) {
+                    if (yearsPastPeak >= 3L && random.nextInt(100) < 35 && athleticism > 40) {
                         athleticism--
                     }
                 }
 
-                val technicalDeclineChance = (12 + yearsPastPeak * 7).coerceAtMost(65)
+                val technicalDeclineChance = (12L + yearsPastPeak * 7L).coerceAtMost(65L).toInt()
                 if (random.nextInt(100) < technicalDeclineChance) {
                     when (all[random.nextInt(4)]) {
                         "shooting" -> shooting = (shooting - 1).coerceAtLeast(40)
