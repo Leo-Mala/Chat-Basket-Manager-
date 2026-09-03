@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.domain.rules.SavedGameLoadState
+import com.example.models.GameState
 import com.example.utils.AutoSaveManager
 import com.example.utils.SaveSlotManager
 import kotlinx.coroutines.runBlocking
