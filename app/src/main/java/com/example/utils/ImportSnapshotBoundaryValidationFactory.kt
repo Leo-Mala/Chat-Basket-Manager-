@@ -122,15 +122,34 @@ class ImportSnapshotBoundaryValidationFactory : TypeAdapterFactory {
             finance.revenues.broadcastingRevenue,
             finance.revenues.playoffRevenue
         )
-        val total = revenueParts.fold(0L) { acc, value ->
+        val totalRevenue = revenueParts.fold(0L) { acc, value ->
             try {
                 Math.addExact(acc, value.toLong())
             } catch (_: ArithmeticException) {
                 throw JsonParseException("Imported advanced-finance revenue overflows Long")
             }
         }
-        if (total > Int.MAX_VALUE) {
+        if (totalRevenue > Int.MAX_VALUE) {
             throw JsonParseException("Imported advanced-finance revenue exceeds the supported aggregate range")
+        }
+
+        val expenseParts = listOf(
+            finance.expenses.playerSalaries,
+            finance.expenses.staffSalaries,
+            finance.expenses.facilityMaintenance,
+            finance.expenses.travelLogistics,
+            finance.expenses.operationalExpenses,
+            finance.expenses.luxuryTaxPaid
+        )
+        val totalExpenses = expenseParts.fold(0L) { acc, value ->
+            try {
+                Math.addExact(acc, value.toLong())
+            } catch (_: ArithmeticException) {
+                throw JsonParseException("Imported advanced-finance expenses overflow Long")
+            }
+        }
+        if (totalExpenses > Int.MAX_VALUE) {
+            throw JsonParseException("Imported advanced-finance expenses exceed the supported aggregate range")
         }
     }
 
