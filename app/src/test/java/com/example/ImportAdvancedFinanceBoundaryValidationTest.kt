@@ -3,6 +3,7 @@ package com.example
 import com.example.data.repository.GameStateRepository
 import com.example.models.AdvancedExpenses
 import com.example.models.FinanceAdvanced
+import com.example.models.HistoryManager
 import com.example.models.Season
 import com.example.utils.ImportSnapshotReviewValidationFactory
 import com.google.gson.Gson
@@ -63,7 +64,7 @@ class ImportAdvancedFinanceBoundaryValidationTest {
         financeJson = null,
         tacticsJson = null,
         seasonJson = plainGson.toJson(Season(emptyList())),
-        historyJson = null,
+        historyJson = plainGson.toJson(HistoryManager()),
         awardsJson = null,
         startingFiveJson = null,
         freeAgentsJson = null,
