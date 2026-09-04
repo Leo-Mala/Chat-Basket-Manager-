@@ -5,6 +5,7 @@ import com.example.models.Arena
 import com.example.models.NbaTeam
 import com.example.models.Player
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
@@ -16,18 +17,26 @@ object NbaDataGenerator {
     private var idCounter = 1
     private fun nextId(): Int = idCounter++
 
-    private data class RosterFile(val teams: List<RosterTeam>)
-    private data class RosterTeam(val name: String, val conference: String, val players: List<RosterPlayer>)
+    private data class RosterFile(
+        @SerializedName("teams") val teams: List<RosterTeam>
+    )
+
+    private data class RosterTeam(
+        @SerializedName("name") val name: String,
+        @SerializedName("conference") val conference: String,
+        @SerializedName("players") val players: List<RosterPlayer>
+    )
+
     private data class RosterPlayer(
-        val name: String,
-        val position: String,
-        val age: Int,
-        val overall: Int,
-        val shooting: Int,
-        val defense: Int,
-        val rebound: Int,
-        val passing: Int,
-        val athleticism: Int
+        @SerializedName("name") val name: String,
+        @SerializedName("position") val position: String,
+        @SerializedName("age") val age: Int,
+        @SerializedName("overall") val overall: Int,
+        @SerializedName("shooting") val shooting: Int,
+        @SerializedName("defense") val defense: Int,
+        @SerializedName("rebound") val rebound: Int,
+        @SerializedName("passing") val passing: Int,
+        @SerializedName("athleticism") val athleticism: Int
     )
 
     private const val BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
