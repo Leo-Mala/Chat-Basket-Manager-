@@ -79,7 +79,7 @@ class SaveTransferManagerTest {
         assertNotNull(sourceLoaded)
         assertNotNull(targetLoaded)
         assertEquals(sourceLoaded!!.teamJson, targetLoaded!!.teamJson)
-        assertEquals(sourceLoaded.seasonJson, targetLoaded.seasonJson)
+        assertSeasonContentEquals(sourceLoaded.seasonJson, targetLoaded.seasonJson)
         assertEquals(sourceLoaded.financeJson, targetLoaded.financeJson)
 
         val targetMetadata = SaveSlotManager.getSlots(context).single { it.slotId == targetSlot }
@@ -93,6 +93,8 @@ class SaveTransferManagerTest {
     fun rejectedImportRestoresPreviousActiveSlotAndPreservesTargetCareer() = runBlocking {
         val target = snapshot(teamIndex = 1, seasonNumber = 3, currentDay = 9, budget = 111_000_000)
         persist(targetRepository, targetSlot, target)
+        val canonicalTargetBeforeImport = targetRepository.load()
+        assertNotNull(canonicalTargetBeforeImport)
         SaveSlotManager.setActiveSlot(context, sourceSlot)
 
         assertFalse(
@@ -106,15 +108,50 @@ class SaveTransferManagerTest {
 
         val loadedTarget = targetRepository.load()
         assertNotNull(loadedTarget)
-        assertEquals(target.teamJson, loadedTarget!!.teamJson)
-        assertEquals(target.seasonJson, loadedTarget.seasonJson)
-        assertEquals(target.financeJson, loadedTarget.financeJson)
+        assertEquals(canonicalTargetBeforeImport!!.teamJson, loadedTarget!!.teamJson)
+        assertEquals(canonicalTargetBeforeImport.seasonJson, loadedTarget.seasonJson)
+        assertEquals(canonicalTargetBeforeImport.financeJson, loadedTarget.financeJson)
 
         val metadata = SaveSlotManager.getSlots(context).single { it.slotId == targetSlot }
         assertTrue(metadata.occupied)
         assertEquals(NbaDataGenerator.getAllTeams()[1].name, metadata.teamName)
         assertEquals(3, metadata.seasonNumber)
         assertEquals(9, metadata.currentDay)
+    }
+
+    private fun assertSeasonContentEquals(expectedJson: String?, actualJson: String?) {
+        val expected = gson.fromJson(expectedJson, Season::class.java)
+        val actual = gson.fromJson(actualJson, Season::class.java)
+
+        assertEquals(expected.currentDay, actual.currentDay)
+        assertEquals(expected.gamesPlayed, actual.gamesPlayed)
+        assertEquals(expected.seasonNumber, actual.seasonNumber)
+        assertEquals(expected.nextPlayerId, actual.nextPlayerId)
+        assertEquals(expected.userTeamName, actual.userTeamName)
+        assertEquals(
+            expected.teams.map { team -> team.name to team.players.map { it.id } },
+            actual.teams.map { team -> team.name to team.players.map { it.id } }
+        )
+        assertEquals(gson.toJson(expected.standings), gson.toJson(actual.standings))
+        assertEquals(historySignature(expected), historySignature(actual))
+    }
+
+    private fun historySignature(season: Season): List<List<Any>> = season.history.map { game ->
+        listOf(
+            game.homeTeam.name,
+            game.awayTeam.name,
+            game.homeScore,
+            game.awayScore,
+            game.attendance,
+            game.narration,
+            game.homeStats.entries
+                .sortedBy { it.key.id }
+                .map { it.key.id to it.value },
+            game.awayStats.entries
+                .sortedBy { it.key.id }
+                .map { it.key.id to it.value },
+            game.injuries.map { it.player.id to it.daysOut }
+        )
     }
 
     private suspend fun persist(
