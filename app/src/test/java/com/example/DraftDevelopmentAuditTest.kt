@@ -58,8 +58,14 @@ class DraftDevelopmentAuditTest {
         assertTrue("Elite prospect tier implausible: $eliteShare", eliteShare in 0.025..0.14)
         assertTrue("Generational prospects should be rare but possible: $generationalShare", generationalShare in 0.002..0.035)
 
-        // Track 600 careers spread uniformly across all 100 generated classes.
-        val careerSample = prospects.filterIndexed { index, _ -> index % 5 == 0 }.take(600)
+        // Track 600 careers spread uniformly across all 100 generated classes. Sampling the same
+        // index residue from every class would alias with the deterministic id-based development
+        // profile, so rotate that residue across classes while still taking six prospects per class.
+        val careerSample = prospects.chunked(30).flatMapIndexed { classIndex, draftClass ->
+            require(draftClass.size == 30) { "Expected a complete 30-player draft class" }
+            val residue = classIndex % 5
+            (0 until 6).map { sampleIndex -> draftClass[residue + sampleIndex * 5] }
+        }
         val outcomes = careerSample.map(::simulateCareer)
 
         val stagnantShare = outcomes.count { it.gain <= 3 }.toDouble() / outcomes.size
