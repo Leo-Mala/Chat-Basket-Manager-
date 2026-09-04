@@ -22,6 +22,16 @@ interface PlayerDao {
     @Query("SELECT * FROM players ORDER BY id") suspend fun all(): List<PlayerEntity>
     @Upsert suspend fun upsertAll(items: List<PlayerEntity>)
     @Query("UPDATE players SET active = 0, teamId = NULL, startingFive = 0, poolType = 'HISTORICAL'") suspend fun archiveAll()
+    @Query("DELETE FROM players WHERE id NOT IN (:retainedIds)") suspend fun deleteNotIn(retainedIds: List<Int>)
+    @Transaction
+    suspend fun replaceAll(items: List<PlayerEntity>) {
+        if (items.isEmpty()) {
+            clear()
+            return
+        }
+        upsertAll(items)
+        deleteNotIn(items.map { it.id })
+    }
     @Query("DELETE FROM players") suspend fun clear()
 }
 

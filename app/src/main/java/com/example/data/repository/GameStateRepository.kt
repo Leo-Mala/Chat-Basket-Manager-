@@ -123,8 +123,10 @@ class GameStateRepository(
         }
 
         db.teamDao().upsertAll(allTeams.map { it.toEntity() })
-        db.playerDao().archiveAll()
-        db.playerDao().upsertAll(players.values.toList())
+        // This is an authoritative current snapshot. Keep every active pool plus
+        // current-season/award historical references built above, but drop historical
+        // player rows that are no longer referenced so long careers stay bounded.
+        db.playerDao().replaceAll(players.values.toList())
 
         // Contracts are owned only by players currently under a team. Free agents,
         // draft prospects and historical players must not keep orphan contracts.
