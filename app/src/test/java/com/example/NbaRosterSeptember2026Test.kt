@@ -41,7 +41,7 @@ class NbaRosterSeptember2026Test {
 
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(canonical.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
         assertEquals(NbaDataGenerator.ROSTER_CANONICAL_SHA256, digest)
         assertEquals("599317bc0c2254eb313c1d29594f5ee2a5139e0eeef5ce41da20975b521e0ded", digest)
