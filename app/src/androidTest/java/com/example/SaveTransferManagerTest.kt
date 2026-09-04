@@ -7,6 +7,7 @@ import com.example.data.NbaDataGenerator
 import com.example.data.local.BasketDatabase
 import com.example.data.repository.GameStateRepository
 import com.example.models.*
+import com.example.simulator.GameSimulator
 import com.example.utils.AutoSaveManager
 import com.example.utils.SaveSlotManager
 import com.example.utils.SaveTransferManager
@@ -140,11 +141,35 @@ class SaveTransferManagerTest {
         val season = Season(
             teams = teams,
             currentDay = currentDay,
-            gamesPlayed = 0,
+            gamesPlayed = currentDay * (teams.size / 2),
             seasonNumber = seasonNumber,
             nextPlayerId = nextPlayerId
         ).apply {
             userTeamName = managed.name
+            standings.values.forEachIndexed { index, record ->
+                record.gamesPlayed = currentDay
+                if (index % 2 == 0) record.wins = currentDay else record.losses = currentDay
+                record.totalPointsScored = currentDay * 95
+                record.totalPointsConceded = currentDay * 95
+            }
+            repeat(currentDay) { dayIndex ->
+                val opponent = teams[(teamIndex + 1 + dayIndex) % teams.size].let {
+                    if (it.name == managed.name) teams[(teamIndex + 2 + dayIndex) % teams.size] else it
+                }
+                val homePlayer = managed.players.first()
+                val awayPlayer = opponent.players.first()
+                history += GameSimulator.GameResult(
+                    homeTeam = managed,
+                    awayTeam = opponent,
+                    homeScore = 100,
+                    awayScore = 90,
+                    attendance = 15_000,
+                    homeStats = mapOf(homePlayer to GameSimulator.PlayerStats(100, 0, 0, 0, 0, 0, 10)),
+                    awayStats = mapOf(awayPlayer to GameSimulator.PlayerStats(90, 0, 0, 0, 0, 0, -10)),
+                    injuries = emptyList(),
+                    narration = "Transfer fixture day ${dayIndex + 1}"
+                )
+            }
         }
         val contracts = teams.flatMap { team ->
             team.players.map { player ->
