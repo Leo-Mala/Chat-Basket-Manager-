@@ -136,23 +136,25 @@ class SaveTransferManagerTest {
         assertEquals(historySignature(expected), historySignature(actual))
     }
 
-    private fun historySignature(season: Season): List<List<Any>> = season.history.map { game ->
-        listOf(
-            game.homeTeam.name,
-            game.awayTeam.name,
-            game.homeScore,
-            game.awayScore,
-            game.attendance,
-            game.narration,
-            game.homeStats.entries
-                .sortedBy { it.key.id }
-                .map { it.key.id to it.value },
-            game.awayStats.entries
-                .sortedBy { it.key.id }
-                .map { it.key.id to it.value },
-            game.injuries.map { it.player.id to it.daysOut }
-        )
-    }
+    private fun historySignature(season: Season): List<List<Any>> = season.history
+        .sortedBy { it.narration }
+        .map { game ->
+            listOf(
+                game.homeTeam.name,
+                game.awayTeam.name,
+                game.homeScore,
+                game.awayScore,
+                game.attendance,
+                game.narration,
+                game.homeStats.entries
+                    .sortedBy { it.key.id }
+                    .map { it.key.id to it.value },
+                game.awayStats.entries
+                    .sortedBy { it.key.id }
+                    .map { it.key.id to it.value },
+                game.injuries.map { it.player.id to it.daysOut }
+            )
+        }
 
     private suspend fun persist(
         repository: GameStateRepository,
