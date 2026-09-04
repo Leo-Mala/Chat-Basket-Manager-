@@ -5,7 +5,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -135,9 +134,9 @@ fun SaveTransferOverlay(viewModel: GameViewModel) {
                 showTransferDialog = true
             },
             modifier = Modifier
-                .align(Alignment.TopEnd)
+                .align(Alignment.BottomEnd)
                 .safeDrawingPadding()
-                .padding(12.dp)
+                .padding(end = 12.dp, bottom = 88.dp)
         ) {
             Icon(Icons.Default.Save, contentDescription = "Importar ou exportar save")
         }
