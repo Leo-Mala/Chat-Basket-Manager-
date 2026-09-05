@@ -20,7 +20,7 @@ class LiveScoringTimelineTest {
             assertEquals(37, events.filter { it.side == LiveScoringSide.USER }.sumOf { it.points })
             assertEquals(29, events.filter { it.side == LiveScoringSide.OPPONENT }.sumOf { it.points })
             assertTrue(events.all { it.points in 1..3 })
-            assertTrue(events.all { it.elapsedMillis in 1 until LiveScoringTimeline.QUARTER_REAL_DURATION_MS })
+            assertTrue(events.all { it.elapsedMillis in 1L until LiveScoringTimeline.QUARTER_REAL_DURATION_MS })
             assertTrue(events.zipWithNext().all { (a, b) -> a.elapsedMillis < b.elapsedMillis })
         }
     }
