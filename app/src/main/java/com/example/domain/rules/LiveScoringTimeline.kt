@@ -17,11 +17,11 @@ data class LiveScoreEvent(
  * Builds the presentation timeline for one accelerated NBA quarter.
  *
  * The match logic first decides the quarter totals. This timeline only decomposes those totals
- * into legal 1/2/3-point scoring events and spreads them across exactly one minute of active
+ * into legal 1/2/3-point scoring events and spreads them across exactly 30 seconds of active
  * real time. Pausing the UI stops active time; resuming continues from the same elapsed instant.
  */
 object LiveScoringTimeline {
-    const val QUARTER_REAL_DURATION_MS = 60_000L
+    const val QUARTER_REAL_DURATION_MS = 30_000L
     const val UI_TICK_MS = 100L
     private const val GAME_SECONDS_PER_QUARTER = 12 * 60
 
