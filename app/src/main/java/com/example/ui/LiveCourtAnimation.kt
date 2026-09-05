@@ -255,7 +255,7 @@ fun LiveCourtAnimation(
                     Offset(0.62f, 0.80f),
                     Offset(0.74f, 0.09f),
                     Offset(0.74f, 0.91f)
-                ).mapIndexed(::organicTarget)
+                ).mapIndexed { index, point -> organicTarget(point, index) }
 
                 val backcourtTransition = if (sameSideRepeat) {
                     listOf(
@@ -273,7 +273,7 @@ fun LiveCourtAnimation(
                         Offset(0.39f, 0.12f),
                         Offset(0.39f, 0.88f)
                     )
-                }.mapIndexed(::organicTarget)
+                }.mapIndexed { index, point -> organicTarget(point, index) }
 
                 val rawTargetOffense = when (playPlan?.style) {
                     LiveCourtPlayStyle.FREE_THROW -> listOf(
@@ -305,7 +305,7 @@ fun LiveCourtAnimation(
                     )
                     null -> baseOffense
                 }
-                val targetOffense = rawTargetOffense.mapIndexed(::organicTarget)
+                val targetOffense = rawTargetOffense.mapIndexed { index, point -> organicTarget(point, index) }
 
                 val transitionProgress = if (playPlan == null) 1f else possessionFlow?.transitionProgress ?: 1f
                 val setupProgress = possessionFlow?.setupProgress ?: 1f
