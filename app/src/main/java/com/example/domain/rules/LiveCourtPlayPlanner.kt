@@ -12,9 +12,26 @@ enum class LiveCourtPlayStyle {
     TOP_THREE
 }
 
+enum class LiveCourtPossessionPhase {
+    TRANSITION,
+    SETUP,
+    ACTION,
+    FINISH
+}
+
 data class LiveCourtPlayPlan(
     val style: LiveCourtPlayStyle,
     val passCount: Int
+)
+
+data class LiveCourtPossessionFlow(
+    val phase: LiveCourtPossessionPhase,
+    val transitionProgress: Float,
+    val setupProgress: Float,
+    val actionProgress: Float,
+    val finishProgress: Float,
+    val sequenceProgress: Float,
+    val effectivePassCount: Int
 )
 
 /**
@@ -75,6 +92,69 @@ object LiveCourtPlayPlanner {
         }
 
         return LiveCourtPlayPlan(style = style, passCount = passCount)
+    }
+
+    /**
+     * Splits one already-scheduled scoring possession into presentation phases. Short possessions
+     * deliberately use fewer visible passes instead of cramming several movements into a few
+     * frames. This affects animation only; the event time and score remain untouched.
+     */
+    fun flow(
+        progress: Float,
+        possessionDurationMillis: Long,
+        plannedPassCount: Int
+    ): LiveCourtPossessionFlow {
+        require(possessionDurationMillis > 0L) { "possessionDurationMillis must be positive" }
+        require(plannedPassCount >= 0) { "plannedPassCount must be non-negative" }
+
+        val clamped = progress.coerceIn(0f, 1f)
+        val transitionEnd = when {
+            possessionDurationMillis < 1_200L -> 0.16f
+            possessionDurationMillis < 1_800L -> 0.20f
+            else -> 0.23f
+        }
+        val setupEnd = when {
+            possessionDurationMillis < 1_200L -> 0.34f
+            possessionDurationMillis < 1_800L -> 0.40f
+            else -> 0.45f
+        }
+        val actionEnd = when {
+            possessionDurationMillis < 1_200L -> 0.76f
+            possessionDurationMillis < 1_800L -> 0.79f
+            else -> 0.82f
+        }
+
+        fun segment(value: Float, start: Float, end: Float): Float {
+            if (end <= start) return if (value >= end) 1f else 0f
+            return ((value - start) / (end - start)).coerceIn(0f, 1f)
+        }
+
+        val effectivePassCount = minOf(
+            plannedPassCount,
+            when {
+                possessionDurationMillis < 1_050L -> 0
+                possessionDurationMillis < 1_500L -> 1
+                possessionDurationMillis < 2_200L -> 2
+                else -> 3
+            }
+        )
+
+        val phase = when {
+            clamped < transitionEnd -> LiveCourtPossessionPhase.TRANSITION
+            clamped < setupEnd -> LiveCourtPossessionPhase.SETUP
+            clamped < actionEnd -> LiveCourtPossessionPhase.ACTION
+            else -> LiveCourtPossessionPhase.FINISH
+        }
+
+        return LiveCourtPossessionFlow(
+            phase = phase,
+            transitionProgress = segment(clamped, 0f, transitionEnd),
+            setupProgress = segment(clamped, transitionEnd, setupEnd),
+            actionProgress = segment(clamped, setupEnd, actionEnd),
+            finishProgress = segment(clamped, actionEnd, 1f),
+            sequenceProgress = segment(clamped, transitionEnd, 1f),
+            effectivePassCount = effectivePassCount
+        )
     }
 
     private fun indexFor(seed: Long, size: Int): Int {
