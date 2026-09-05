@@ -24,6 +24,28 @@ class LiveCourtOrganicMotionTest {
     }
 
     @Test
+    fun `formation bias is small deterministic and player specific`() {
+        val first = LiveCourtOrganicMotion.formationBias(2, 8_400L, 31L)
+        val repeated = LiveCourtOrganicMotion.formationBias(2, 8_400L, 31L)
+        val group = (0..4).map { index ->
+            LiveCourtOrganicMotion.formationBias(index, 8_400L, 31L)
+        }
+
+        assertEquals(first, repeated)
+        assertTrue(group.all { it.xOffset in -0.008f..0.008f })
+        assertTrue(group.all { it.yOffset in -0.015f..0.015f })
+        assertTrue(group.map { it.xOffset to it.yOffset }.distinct().size >= 4)
+    }
+
+    @Test
+    fun `formation salt changes layout without losing determinism`() {
+        val setup = LiveCourtOrganicMotion.formationBias(1, 9_600L, 17L)
+        val action = LiveCourtOrganicMotion.formationBias(1, 9_600L, 43L)
+        assertNotEquals(setup, action)
+        assertEquals(setup, LiveCourtOrganicMotion.formationBias(1, 9_600L, 17L))
+    }
+
+    @Test
     fun `defenders react after offense instead of mirroring instantly`() {
         val actionProgress = 0.50f
         val reactions = (0..4).map { index ->
