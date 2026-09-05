@@ -1,86 +1,82 @@
 package com.example.ui
 
-import com.example.*
-
-import android.Manifest
-import android.content.Context
-import android.os.Build
-import android.os.Bundle
-import android.widget.Toast
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.Stable
+import androidx.compose.material.icons.filled.SportsBasketball
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import com.example.data.NbaDataGenerator
-import com.example.domain.finance.FinanceManager
-import com.example.domain.roster.RosterManager
-import com.example.domain.season.SeasonManager
-import com.example.domain.trade.TradeManager
-import com.example.domain.draft.DraftManager
-import com.example.domain.playoff.PlayoffManager
+import com.example.GameViewModel
 import com.example.domain.rules.LiveMatchRules
-import com.example.models.*
+import com.example.domain.rules.LiveScoringSide
+import com.example.domain.rules.LiveScoringTimeline
+import com.example.models.Expense
+import com.example.models.GameState
+import com.example.models.NbaTeam
+import com.example.models.PlayStyle
+import com.example.models.Player
+import com.example.models.Tactics
 import com.example.simulator.GameSimulator
-import com.example.ui.theme.*
+import com.example.simulator.LiveLineupRules
+import com.example.ui.theme.BasketOrange
+import com.example.ui.theme.ChampionshipGold
+import com.example.ui.theme.CourtBorder
+import com.example.ui.theme.CourtDeepSlate
+import com.example.ui.theme.CourtLightSlate
+import com.example.ui.theme.ElectricCyan
+import com.example.ui.theme.ErrorRed
+import com.example.ui.theme.TextGray
+import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextWhite
 import com.example.utils.AwardsCalculator
-import com.example.utils.AutoSaveManager
-import com.example.utils.ToastUtils
-import com.example.utils.CoachFeedbackGenerator
-import com.example.ui.screens.MainMenuScreen
-import com.example.ui.screens.StatsTab
-import com.example.ui.screens.NotificationsTab
-import com.example.ui.components.GameButton
-import com.google.gson.Gson
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlin.random.Random
-
+import kotlin.math.min
 
 @Composable
-
 fun PartidaDialog(
     viewModel: GameViewModel,
     homeTeamOverride: NbaTeam? = null,
@@ -101,34 +97,43 @@ fun PartidaDialog(
     }
     val homeTeam = initialMatchup.first
     val awayTeam = initialMatchup.second
-
-    val isUserGame = (userManagedTeam.name == homeTeam.name || userManagedTeam.name == awayTeam.name)
-
+    val isUserGame = userManagedTeam.name == homeTeam.name || userManagedTeam.name == awayTeam.name
     val team = if (isUserGame) {
         if (userManagedTeam.name == homeTeam.name) homeTeam else awayTeam
     } else {
         homeTeam
     }
-
     val opponent = if (isUserGame) {
         if (userManagedTeam.name == homeTeam.name) awayTeam else homeTeam
     } else {
         awayTeam
     }
+    val isHome = team.name == homeTeam.name
 
-    val isHome = (team.name == homeTeam.name)
+    val initialLiveLineup = remember(team.name) {
+        LiveLineupRules.initialLineup(
+            roster = team.players,
+            preferred = if (isUserGame) viewModel.startingFive else emptyList()
+        )
+    }
+    val activeLineup = remember(team.name) {
+        mutableStateListOf<Player>().apply { addAll(initialLiveLineup) }
+    }
 
     var userScore by remember { mutableStateOf(0) }
     var oppScore by remember { mutableStateOf(0) }
     var currentQuarter by remember { mutableStateOf(1) }
+    var quarterClock by remember { mutableStateOf("12:00") }
+    var isPaused by remember { mutableStateOf(false) }
     var isHalftime by remember { mutableStateOf(false) }
     var isFinished by remember { mutableStateOf(false) }
-    
     val qUserScores = remember { mutableStateListOf<Int>() }
     val qOppScores = remember { mutableStateListOf<Int>() }
-    
     var simResult by remember { mutableStateOf<GameSimulator.GameResult?>(null) }
     var narration by remember { mutableStateOf("Início do jogo! A bola está ao alto!") }
+
+    var selectedPlayerOutId by remember { mutableStateOf<Int?>(null) }
+    var selectedPlayerInId by remember { mutableStateOf<Int?>(null) }
 
     var isLiveCoachingActive by remember { mutableStateOf(false) }
     var hasUsedLiveCoaching by remember { mutableStateOf(false) }
@@ -138,6 +143,165 @@ fun PartidaDialog(
     val starPlayer = team.players.maxByOrNull { it.overall }
     val starName = starPlayer?.name ?: "Estrela do Time"
 
+    fun replaceActiveLineup(updated: List<Player>) {
+        if (updated.size != LiveLineupRules.PLAYERS_ON_COURT) return
+        activeLineup.clear()
+        activeLineup.addAll(updated)
+    }
+
+    fun applyAutomaticRotation(completedQuarter: Int): String {
+        if (!isUserGame || !viewModel.autoSubstitutionsEnabled) return ""
+        return when (completedQuarter) {
+            2 -> {
+                val bench = LiveLineupRules.bench(team.players, activeLineup)
+                val playerOut = activeLineup.minByOrNull { it.overall }
+                val playerIn = bench.maxByOrNull { it.overall }
+                if (playerOut == null || playerIn == null) {
+                    ""
+                } else {
+                    val substitution = LiveLineupRules.substitute(
+                        roster = team.players,
+                        activeLineup = activeLineup,
+                        playerOutId = playerOut.id,
+                        playerInId = playerIn.id
+                    )
+                    if (substitution == null) {
+                        ""
+                    } else {
+                        replaceActiveLineup(substitution.lineup)
+                        "🔄 Rotação automática: ${substitution.playerIn.name} entra no lugar de ${substitution.playerOut.name}."
+                    }
+                }
+            }
+            3 -> {
+                val restored = LiveLineupRules.initialLineup(team.players, initialLiveLineup)
+                if (restored.size == LiveLineupRules.PLAYERS_ON_COURT) {
+                    replaceActiveLineup(restored)
+                    "🔄 Rotação automática: titulares principais retornam para o 4º quarto."
+                } else {
+                    ""
+                }
+            }
+            else -> ""
+        }
+    }
+
+    fun finishGame() {
+        if (isFinished) return
+        isPaused = false
+        isFinished = true
+        quarterClock = "00:00"
+
+        val simulator = GameSimulator(context.applicationContext, viewModel.simulationConfig())
+        val baseResult = try {
+            simulator.simulate(homeTeam, awayTeam)
+        } finally {
+            simulator.release()
+        }
+
+        val finalUserScore = LiveMatchRules.scoreFromQuarters(qUserScores)
+        val finalOpponentScore = LiveMatchRules.scoreFromQuarters(qOppScores)
+        userScore = finalUserScore
+        oppScore = finalOpponentScore
+        val finalHomeScore = if (isHome) finalUserScore else finalOpponentScore
+        val finalAwayScore = if (isHome) finalOpponentScore else finalUserScore
+        val finalResult = baseResult.copy(homeScore = finalHomeScore, awayScore = finalAwayScore)
+        simResult = finalResult
+
+        if (isUserGame) {
+            viewModel.latestResult = finalResult
+            val won = if (isHome) {
+                finalResult.homeScore > finalResult.awayScore
+            } else {
+                finalResult.awayScore > finalResult.homeScore
+            }
+            val xpEarned = if (won) 15 else 8
+            team.players.forEach { it.addXpSafely(xpEarned) }
+        }
+
+        if (onGameFinished != null) {
+            if (isUserGame) {
+                viewModel.finances?.let { finance ->
+                    val ticketPrice = when (userManagedTeam.name) {
+                        "Los Angeles Lakers", "Golden State Warriors", "New York Knicks" -> 150
+                        "Chicago Bulls", "Boston Celtics", "Miami Heat" -> 120
+                        "Dallas Mavericks", "Denver Nuggets", "Houston Rockets" -> 100
+                        else -> 80
+                    }
+                    if (isHome) {
+                        val gateRevenue = finalResult.attendance * ticketPrice
+                        finance.budget += gateRevenue
+                        finance.expenses.add(Expense("Receita de Ingressos (Playoffs)", gateRevenue, "Playoffs"))
+                    }
+                }
+                viewModel.saveGame()
+            }
+            onGameFinished(finalResult)
+            return
+        }
+
+        val matchups = viewModel.getMatchupsForDay(currentSeason.currentDay)
+        viewModel.simulateOtherGames(context, matchups, finalResult)
+        currentSeason.advanceDay()
+
+        viewModel.finances?.let { finance ->
+            val ticketPrice = if (viewModel.financeAdvanced.ticketPrice > 0) {
+                viewModel.financeAdvanced.ticketPrice
+            } else {
+                when (userManagedTeam.name) {
+                    "Los Angeles Lakers", "Golden State Warriors", "New York Knicks" -> 120
+                    "Chicago Bulls", "Boston Celtics", "Miami Heat" -> 100
+                    "Dallas Mavericks", "Denver Nuggets", "Houston Rockets" -> 85
+                    else -> 70
+                }
+            }
+            if (isHome) {
+                val gateRevenue = finalResult.attendance * ticketPrice
+                finance.budget += gateRevenue
+                finance.expenses.add(Expense("Receita de Ingressos", gateRevenue, "Dia ${currentSeason.currentDay}"))
+            }
+
+            val dailySponsorRevenue = finance.sponsors.sumOf { it.amountPerYear } / 82
+            finance.budget += dailySponsorRevenue
+            finance.expenses.add(Expense("Receita de Patrocínio", dailySponsorRevenue, "Dia ${currentSeason.currentDay}"))
+
+            val dailyTvMerch = (85_000_000 + 20_000_000) / 82
+            finance.budget += dailyTvMerch
+
+            val playerSalaries = userManagedTeam.players.sumOf { it.calculateSalary() / 82 }
+            finance.budget -= playerSalaries
+            finance.expenses.add(Expense("Salários dos Jogadores", playerSalaries, "Dia ${currentSeason.currentDay}"))
+
+            if (currentSeason.currentDay % 5 == 0) {
+                val expenseAmount = 250_000
+                finance.budget -= expenseAmount
+                finance.expenses.add(Expense("Despesas e Salários", expenseAmount, "Dia ${currentSeason.currentDay}"))
+            }
+
+            if (!finance.coachSalaryPaid && viewModel.coach != null) {
+                val coachSalary = viewModel.coach?.salary ?: 350_000
+                finance.budget -= coachSalary
+                finance.expenses.add(Expense("Salário do Técnico", coachSalary, "Temporada ${currentSeason.seasonNumber}"))
+                finance.coachSalaryPaid = true
+            }
+        }
+
+        viewModel.season = null
+        viewModel.season = currentSeason
+        viewModel.managedTeam = userManagedTeam
+
+        if (currentSeason.currentDay >= 82) {
+            viewModel.currentAwards = AwardsCalculator.calculateAwards(
+                currentSeason.teams,
+                currentSeason.standings,
+                viewModel.coach?.name ?: "Você",
+                viewModel.managedTeam?.name
+            )
+            viewModel.gameState = GameState.PLAYOFFS
+        }
+        viewModel.saveGame()
+    }
+
     fun executeClutchPlay(playType: String) {
         if (!isLiveCoachingActive || isFinished) return
         val baseRoll = (1..100).random() / 100.0 + timeoutBoost
@@ -146,534 +310,406 @@ fun PartidaDialog(
                 if (baseRoll > 0.40) {
                     userScore += 3
                     if (qUserScores.isNotEmpty()) qUserScores[qUserScores.lastIndex] = qUserScores.last() + 3
-                    narration = "🎯 0:02 - $starName recebe no perímetro, faz o drible de hesitação e lança DE TRÊS...\n\nÉ BOLA NA REDE! CESTA INCRÍVEL DE 3 PONTOS NO ESTOURO DO CRONÔMETRO! 🏀🔥"
+                    narration = "🎯 0:02 - $starName recebe no perímetro e lança de três... É BOLA NA REDE! +3!"
                 } else {
-                    narration = "🎯 0:02 - $starName lança de 3 sob forte marcação... A bola bate no aro e sai! Apito final!"
+                    narration = "🎯 0:02 - $starName lança de três sob pressão... bate no aro e sai!"
                 }
             }
             "PAINT" -> {
                 if (baseRoll > 0.30) {
-                    val isAndOne = (1..100).random() < 35
-                    val pts = if (isAndOne) 3 else 2
-                    userScore += pts
-                    if (qUserScores.isNotEmpty()) qUserScores[qUserScores.lastIndex] = qUserScores.last() + pts
-                    narration = if (isAndOne) {
-                        "💥 0:03 - Infiltração espetacular de $starName no garrafão! ENTERRA COM DUAS MÃOS E SOFRE A FALTA! AND-1 CONVERTIDO! 🔥"
+                    val andOne = (1..100).random() < 35
+                    val points = if (andOne) 3 else 2
+                    userScore += points
+                    if (qUserScores.isNotEmpty()) qUserScores[qUserScores.lastIndex] = qUserScores.last() + points
+                    narration = if (andOne) {
+                        "💥 0:03 - $starName ataca o garrafão, converte e sofre a falta! AND-1! +3!"
                     } else {
-                        "💥 0:03 - Infiltração rápida pelo garrafão! $starName corta a defesa e faz a bandeja decisiva! DOIS PONTOS! 🏀"
+                        "💥 0:03 - $starName infiltra e converte a bandeja! +2!"
                     }
                 } else {
-                    narration = "💥 0:03 - Infiltração forçada no garrafão! A defesa adversária tranca o espaço e bloqueia o arremesso!"
+                    narration = "💥 0:03 - A defesa fecha o garrafão e bloqueia a tentativa!"
                 }
             }
             "ISO" -> {
                 if (baseRoll > 0.35) {
                     userScore += 2
                     if (qUserScores.isNotEmpty()) qUserScores[qUserScores.lastIndex] = qUserScores.last() + 2
-                    narration = "🌟 0:04 - ISOLAMENTO TOTAL para $starName! Drible cruzado, cria espaço no x1 e arremessa de meia distância...\n\nSWISH! BOLA LIMPA NA REDE! CESTA DA VITÓRIA NOS SEGUNDOS FINAIS! 🏀🌟"
+                    narration = "🌟 0:04 - Isolamento para $starName, arremesso de média distância... CESTA! +2!"
                 } else {
-                    narration = "🌟 0:04 - Isolamento para $starName! A marcação dupla fecha rápido e força o arremesso contestado que erra o alvo!"
+                    narration = "🌟 0:04 - Isolamento para $starName, mas a marcação força o erro!"
                 }
             }
             "FOUL" -> {
-                val oppFt = (1..2).random()
-                oppScore += oppFt
-                if (qOppScores.isNotEmpty()) qOppScores[qOppScores.lastIndex] = qOppScores.last() + oppFt
-                narration = "🛑 0:10 - Falta tática cometida para parar o relógio! ${opponent.name} converte $oppFt lance(s) livre(s).\nPlacar: ${team.name} $userScore x $oppScore ${opponent.name}. Posse de bola final para $starName!"
+                val opponentFreeThrows = (1..2).random()
+                oppScore += opponentFreeThrows
+                if (qOppScores.isNotEmpty()) qOppScores[qOppScores.lastIndex] = qOppScores.last() + opponentFreeThrows
+                narration = "🛑 0:10 - Falta tática. ${opponent.name} converte $opponentFreeThrows lance(s) livre(s)."
             }
         }
         hasUsedLiveCoaching = true
         isLiveCoachingActive = false
+        timeoutBoost = 0.0
     }
-    
+
     LaunchedEffect(isHalftime, isFinished, currentQuarter, isLiveCoachingActive, hasUsedLiveCoaching) {
-        if (!isHalftime && !isFinished && !isLiveCoachingActive) {
-            // After the user resolves the 0:15 clutch card, this effect is re-entered only
-            // to finalize the game. Never simulate or score Q4 a second time.
-            val resolvingClutch = currentQuarter == 4 && hasUsedLiveCoaching
-            if (!resolvingClutch) {
-                narration = "${currentQuarter}º Quarto em andamento... As equipes disputam cada posse!"
-                delay(2500)
-            }
+        if (isHalftime || isFinished || isLiveCoachingActive) return@LaunchedEffect
 
-            val tacticsObj = if (isUserGame) (viewModel.tactics ?: Tactics()) else Tactics()
-            val coachObj = if (isUserGame) viewModel.coach else null
-            val diff = if (isUserGame) viewModel.difficulty else 1
+        val resolvingClutch = currentQuarter == 4 && hasUsedLiveCoaching
+        if (resolvingClutch) {
+            finishGame()
+            return@LaunchedEffect
+        }
 
-            val userDiffMod = when (diff) {
-                0 -> 1.06 // Fácil: +6% pro usuário
-                1 -> 0.95 // Normal: -5% pro usuário
-                2 -> 0.92 // Difícil: -8% pro usuário
-                else -> 0.95
-            }
-            val oppDiffMod = when (diff) {
-                0 -> 0.92 // Fácil: -8% pro oponente
-                1 -> 1.08 // Normal: +8% pro oponente
-                2 -> 1.10 // Difícil: +10% pro oponente
-                else -> 1.08
-            }
+        isPaused = false
+        selectedPlayerOutId = null
+        selectedPlayerInId = null
+        quarterClock = "12:00"
+        narration = "${currentQuarter}º quarto em andamento. O relógio acelerado começou!"
 
-            val userAvgRating = if (team.players.isNotEmpty()) team.players.map { it.overall }.average() else 75.0
-            val oppAvgRating = if (opponent.players.isNotEmpty()) opponent.players.map { it.overall }.average() else 75.0
+        val tactics = if (isUserGame) viewModel.tactics ?: Tactics() else Tactics()
+        val coach = if (isUserGame) viewModel.coach else null
+        val difficulty = if (isUserGame) viewModel.difficulty else 1
+        val userDiffMod = when (difficulty) {
+            0 -> 1.06
+            1 -> 0.95
+            2 -> 0.92
+            else -> 0.95
+        }
+        val opponentDiffMod = when (difficulty) {
+            0 -> 0.92
+            1 -> 1.08
+            2 -> 1.10
+            else -> 1.08
+        }
 
-            val userOff = (userAvgRating / 75.0) * tacticsObj.getOffensiveModifier() * (1 + (coachObj?.getOffensiveBonus() ?: 0.0)) * userDiffMod
-            val userDef = (userAvgRating / 75.0) * tacticsObj.getDefensiveModifier() * (1 + (coachObj?.getDefensiveBonus() ?: 0.0)) * userDiffMod
+        // The current five is match-local. Manual substitutions therefore influence the next
+        // quarter calculation without overwriting the saved pre-game starting five.
+        val userRatingSource = if (isUserGame && activeLineup.size == LiveLineupRules.PLAYERS_ON_COURT) {
+            activeLineup.toList()
+        } else {
+            team.players
+        }
+        val userAverage = if (userRatingSource.isNotEmpty()) userRatingSource.map { it.overall }.average() else 75.0
+        val opponentAverage = if (opponent.players.isNotEmpty()) opponent.players.map { it.overall }.average() else 75.0
+        val userOffense = (userAverage / 75.0) * tactics.getOffensiveModifier() *
+            (1 + (coach?.getOffensiveBonus() ?: 0.0)) * userDiffMod
+        val userDefense = (userAverage / 75.0) * tactics.getDefensiveModifier() *
+            (1 + (coach?.getDefensiveBonus() ?: 0.0)) * userDiffMod
+        val opponentOffense = (opponentAverage / 75.0) * opponentDiffMod
+        val opponentDefense = (opponentAverage / 75.0) * opponentDiffMod
+        val homeBonus = if (isHome) 1.5 else 0.0
+        val baseUser = (24.0 * userOffense / opponentDefense + homeBonus + (tactics.pace - 50) * 0.05).toInt()
+        val baseOpponent = (24.0 * opponentOffense / userDefense + (tactics.pace - 50) * 0.05).toInt()
+        val quarterUserPoints = (baseUser + (-4..5).random()).coerceIn(12, 45)
+        val quarterOpponentPoints = (baseOpponent + (-4..5).random()).coerceIn(12, 45)
 
-            val oppOff = (oppAvgRating / 75.0) * oppDiffMod
-            val oppDef = (oppAvgRating / 75.0) * oppDiffMod
+        qUserScores.add(0)
+        qOppScores.add(0)
+        val timeline = LiveScoringTimeline.build(quarterUserPoints, quarterOpponentPoints)
+        var elapsedMillis = 0L
+        var nextEvent = 0
 
-            val homeBonus = if (isHome) 1.5 else 0.0
-            val baseU = (24.0 * userOff / oppDef + homeBonus + (tacticsObj.pace - 50) * 0.05).toInt()
-            val baseO = (24.0 * oppOff / userDef + (tacticsObj.pace - 50) * 0.05).toInt()
+        while (elapsedMillis < LiveScoringTimeline.QUARTER_REAL_DURATION_MS) {
+            delay(LiveScoringTimeline.UI_TICK_MS)
+            if (isPaused) continue
 
-            val uPoints = (baseU + (-4..5).random()).coerceIn(12, 45)
-            val oPoints = (baseO + (-4..5).random()).coerceIn(12, 45)
+            elapsedMillis = min(
+                LiveScoringTimeline.QUARTER_REAL_DURATION_MS,
+                elapsedMillis + LiveScoringTimeline.UI_TICK_MS
+            )
+            quarterClock = LiveScoringTimeline.clockForElapsed(elapsedMillis)
 
-            if (!resolvingClutch) {
-                narration = "${currentQuarter}º Quarto: Troca de cestas e jogadas de alto nível!"
-                delay(2500)
-
-                qUserScores.add(uPoints)
-                qOppScores.add(oPoints)
-                userScore += uPoints
-                oppScore += oPoints
-            }
-
-            if (currentQuarter <= 2) {
-                val subLog = if (isUserGame && !resolvingClutch) viewModel.performAutoSubstitution(currentQuarter) else ""
-                val baseMsg = when (currentQuarter) {
-                    1 -> "Fim do 1º Quarto! Placar parcial: ${team.name} $userScore x $oppScore ${opponent.name}"
-                    else -> "Fim do 2º Quarto! Intervalo de jogo! Placar parcial: ${team.name} $userScore x $oppScore ${opponent.name}"
+            while (nextEvent < timeline.size && timeline[nextEvent].elapsedMillis <= elapsedMillis) {
+                val scoringEvent = timeline[nextEvent++]
+                when (scoringEvent.side) {
+                    LiveScoringSide.USER -> {
+                        userScore += scoringEvent.points
+                        qUserScores[qUserScores.lastIndex] = qUserScores.last() + scoringEvent.points
+                        narration = when (scoringEvent.points) {
+                            1 -> "⏱️ $quarterClock • ${team.name} converte 1 lance livre. Placar $userScore x $oppScore."
+                            2 -> "🏀 $quarterClock • Cesta de 2 de ${team.name}! Placar $userScore x $oppScore."
+                            else -> "🎯 $quarterClock • Bola de 3 de ${team.name}! Placar $userScore x $oppScore."
+                        }
+                    }
+                    LiveScoringSide.OPPONENT -> {
+                        oppScore += scoringEvent.points
+                        qOppScores[qOppScores.lastIndex] = qOppScores.last() + scoringEvent.points
+                        narration = when (scoringEvent.points) {
+                            1 -> "⏱️ $quarterClock • ${opponent.name} converte 1 lance livre. Placar $userScore x $oppScore."
+                            2 -> "🏀 $quarterClock • Cesta de 2 de ${opponent.name}. Placar $userScore x $oppScore."
+                            else -> "🎯 $quarterClock • Bola de 3 de ${opponent.name}. Placar $userScore x $oppScore."
+                        }
+                    }
                 }
-                narration = if (subLog.isNotEmpty()) "$baseMsg\n$subLog" else baseMsg
-                delay(3000)
-                
-                if (currentQuarter == 2) {
-                    isHalftime = true
-                } else {
-                    currentQuarter++
-                }
-            } else if (currentQuarter in 3..4) {
-                val subLog = if (isUserGame && !resolvingClutch) viewModel.performAutoSubstitution(currentQuarter) else ""
-                val shouldOfferClutch = currentQuarter == 4 && LiveMatchRules.shouldOfferClutch(
+            }
+        }
+
+        quarterClock = "00:00"
+        val automaticRotationLog = applyAutomaticRotation(currentQuarter)
+        val baseMessage = when (currentQuarter) {
+            1 -> "Fim do 1º quarto! ${team.name} $userScore x $oppScore ${opponent.name}."
+            2 -> "Fim do 2º quarto! Intervalo: ${team.name} $userScore x $oppScore ${opponent.name}."
+            3 -> "Fim do 3º quarto! ${team.name} $userScore x $oppScore ${opponent.name}."
+            else -> "Fim do 4º quarto!"
+        }
+        narration = if (automaticRotationLog.isBlank()) baseMessage else "$baseMessage\n$automaticRotationLog"
+        delay(1_000)
+
+        when (currentQuarter) {
+            1 -> currentQuarter = 2
+            2 -> isHalftime = true
+            3 -> currentQuarter = 4
+            4 -> {
+                val shouldOfferClutch = LiveMatchRules.shouldOfferClutch(
                     isUserGame = isUserGame,
                     hasUsedLiveCoaching = hasUsedLiveCoaching,
                     userScore = userScore,
                     opponentScore = oppScore
                 )
-                val baseMsg = when (currentQuarter) {
-                    3 -> "Fim do 3º Quarto! Emoção pura! Placar parcial: ${team.name} $userScore x $oppScore ${opponent.name}"
-                    else -> if (shouldOfferClutch) {
-                        "4º Quarto • faltam 15 segundos! Placar: ${team.name} $userScore x $oppScore ${opponent.name}."
-                    } else {
-                        "Fim do 4º Quarto! Apito final!"
-                    }
-                }
-                narration = if (subLog.isNotEmpty()) "$baseMsg\n$subLog" else baseMsg
-                delay(3000)
-                
-                if (currentQuarter == 4) {
-                    if (shouldOfferClutch) {
-                        isLiveCoachingActive = true
-                        narration = "⏱️ MODO TÉCNICO EM TEMPO REAL!\nFaltam 15 segundos no 4º Quarto! Placar: ${team.name} $userScore x $oppScore ${opponent.name}.\nO jogo está acirrado! Faça sua chamada tática decisiva na prancheta!"
-                        return@LaunchedEffect
-                    }
-
-                    isFinished = true
-                    val simulator = GameSimulator(context.applicationContext, viewModel.simulationConfig())
-                    val baseResult = simulator.simulate(homeTeam, awayTeam)
-                    
-                    val finalUserScore = LiveMatchRules.scoreFromQuarters(qUserScores)
-                    val finalOpponentScore = LiveMatchRules.scoreFromQuarters(qOppScores)
-                    userScore = finalUserScore
-                    oppScore = finalOpponentScore
-                    val finalHomeScore = if (isHome) finalUserScore else finalOpponentScore
-                    val finalAwayScore = if (isHome) finalOpponentScore else finalUserScore
-                    
-                    val finalResult = baseResult.copy(
-                        homeScore = finalHomeScore,
-                        awayScore = finalAwayScore
-                    )
-                    
-                    simResult = finalResult
-                    if (isUserGame) {
-                        viewModel.latestResult = finalResult
-                        val won = if (isHome) finalResult.homeScore > finalResult.awayScore else finalResult.awayScore > finalResult.homeScore
-                        val xpEarned = if (won) 15 else 8
-                        team.players.forEach { player ->
-                            player.addXpSafely(xpEarned)
-                        }
-                    }
-
-                    if (onGameFinished != null) {
-                        if (isUserGame) {
-                            viewModel.finances?.let { f ->
-                                val ticketPrice = when (userManagedTeam.name) {
-                                    "Los Angeles Lakers", "Golden State Warriors", "New York Knicks" -> 150
-                                    "Chicago Bulls", "Boston Celtics", "Miami Heat" -> 120
-                                    "Dallas Mavericks", "Denver Nuggets", "Houston Rockets" -> 100
-                                    else -> 80
-                                }
-                                if (isHome) {
-                                    val gateRevenue = finalResult.attendance * ticketPrice
-                                    f.budget += gateRevenue
-                                    f.expenses.add(Expense("Receita de Ingressos (Playoffs)", gateRevenue, "Playoffs"))
-                                }
-                            }
-                            viewModel.saveGame()
-                        }
-                        onGameFinished(finalResult)
-                    } else {
-                        val matchups = viewModel.getMatchupsForDay(currentSeason.currentDay)
-                        viewModel.simulateOtherGames(context, matchups, finalResult)
-                        
-                        currentSeason.advanceDay()
-                        
-                        viewModel.finances?.let { f ->
-                            val ticketPrice = if (viewModel.financeAdvanced.ticketPrice > 0) viewModel.financeAdvanced.ticketPrice else when (userManagedTeam.name) {
-                                "Los Angeles Lakers", "Golden State Warriors", "New York Knicks" -> 120
-                                "Chicago Bulls", "Boston Celtics", "Miami Heat" -> 100
-                                "Dallas Mavericks", "Denver Nuggets", "Houston Rockets" -> 85
-                                else -> 70
-                            }
-                            if (isHome) {
-                                val gateRevenue = finalResult.attendance * ticketPrice
-                                f.budget += gateRevenue
-                                f.expenses.add(Expense("Receita de Ingressos", gateRevenue, "Dia ${currentSeason.currentDay}"))
-                            }
-
-                            val dailySponsorRevenue = f.sponsors.sumOf { it.amountPerYear } / 82
-                            f.budget += dailySponsorRevenue
-                            f.expenses.add(Expense("Receita de Patrocínio", dailySponsorRevenue, "Dia ${currentSeason.currentDay}"))
-
-                            // Share of TV Rights & Merchandise per game
-                            val dailyTvMerch = (85_000_000 + 20_000_000) / 82
-                            f.budget += dailyTvMerch
-                            
-                            val playerSalaries = userManagedTeam.players.sumOf { it.calculateSalary() / 82 }
-                            f.budget -= playerSalaries
-                            f.expenses.add(Expense("Salários dos Jogadores", playerSalaries, "Dia ${currentSeason.currentDay}"))
-                            
-                            if (currentSeason.currentDay % 5 == 0) {
-                                val expAmount = 250000
-                                f.budget -= expAmount
-                                f.expenses.add(Expense("Despesas e Salários", expAmount, "Dia ${currentSeason.currentDay}"))
-                            }
-
-                            // Pay coach salary (once per season)
-                            if (!f.coachSalaryPaid && viewModel.coach != null) {
-                                val coachSalary = viewModel.coach?.salary ?: 350000
-                                f.budget -= coachSalary
-                                f.expenses.add(Expense("Salário do Técnico", coachSalary, "Temporada ${currentSeason.seasonNumber}"))
-                                f.coachSalaryPaid = true
-                            }
-                        }
-                        
-                        viewModel.season = null
-                        viewModel.season = currentSeason
-                        viewModel.managedTeam = userManagedTeam
-                        
-                        if (currentSeason.currentDay >= 82) {
-                            viewModel.currentAwards = AwardsCalculator.calculateAwards(currentSeason.teams, currentSeason.standings, viewModel.coach?.name ?: "Você", viewModel.managedTeam?.name)
-                            viewModel.gameState = GameState.PLAYOFFS
-                        }
-                        
-                        viewModel.saveGame()
-                    }
+                if (shouldOfferClutch) {
+                    isLiveCoachingActive = true
+                    narration = "⏱️ MODO TÉCNICO! Restam 15 segundos. ${team.name} $userScore x $oppScore ${opponent.name}. Faça a chamada decisiva."
                 } else {
-                    currentQuarter++
+                    finishGame()
                 }
             }
         }
     }
 
-    Dialog(onDismissRequest = { if (isFinished) onDismiss() }) {
+    Dialog(
+        onDismissRequest = { if (isFinished) onDismiss() },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .fillMaxHeight(0.94f)
+                .padding(horizontal = 12.dp, vertical = 18.dp),
             colors = CardDefaults.cardColors(containerColor = CourtDeepSlate),
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier
+                    .padding(18.dp)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = gameTitle ?: if (isFinished) "FIM DE JOGO 🏀" else "SIMULAÇÃO EM TEMPO REAL Q$currentQuarter",
+                    text = gameTitle ?: if (isFinished) "FIM DE JOGO 🏀" else "PARTIDA AO VIVO",
                     fontWeight = FontWeight.Bold,
                     color = ChampionshipGold,
                     fontSize = 14.sp
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                if (!isFinished) {
+                    Text(
+                        text = "Q$currentQuarter • $quarterClock  ·  1 quarto = 1 min",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (isPaused) ChampionshipGold else ElectricCyan
+                    )
+                    if (isPaused) {
+                        Text("PAUSADO", color = ChampionshipGold, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Scoreboard comparison
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = team.name,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = TextWhite,
-                            textAlign = TextAlign.Center
-                        )
-                        Text(
-                            text = "$userScore",
-                            fontSize = 40.sp,
-                            fontWeight = FontWeight.Black,
-                            color = BasketOrange
-                        )
+                        Text(team.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextWhite, textAlign = TextAlign.Center)
+                        Text("$userScore", fontSize = 40.sp, fontWeight = FontWeight.Black, color = BasketOrange)
                     }
                     Text("VS", fontWeight = FontWeight.Bold, color = TextGray, fontSize = 16.sp)
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = opponent.name,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = TextWhite,
-                            textAlign = TextAlign.Center
-                        )
-                        Text(
-                            text = "$oppScore",
-                            fontSize = 40.sp,
-                            fontWeight = FontWeight.Black,
-                            color = TextWhite
-                        )
+                        Text(opponent.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextWhite, textAlign = TextAlign.Center)
+                        Text("$oppScore", fontSize = 40.sp, fontWeight = FontWeight.Black, color = TextWhite)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Quarters score table
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    for (q in 1..4) {
-                        val uQ = qUserScores.getOrNull(q - 1)
-                        val oQ = qOppScores.getOrNull(q - 1)
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Q$q", fontSize = 11.sp, color = TextGray, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    for (quarter in 1..4) {
+                        val userQuarter = qUserScores.getOrNull(quarter - 1)
+                        val opponentQuarter = qOppScores.getOrNull(quarter - 1)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                            Text("Q$quarter", fontSize = 11.sp, color = TextGray, fontWeight = FontWeight.Bold)
                             Text(
-                                text = if (uQ != null && oQ != null) "$uQ - $oQ" else "- x -",
+                                text = if (userQuarter != null && opponentQuarter != null) "$userQuarter - $opponentQuarter" else "- x -",
                                 fontSize = 12.sp,
-                                color = if (q == currentQuarter) BasketOrange else TextWhite,
-                                fontWeight = if (q == currentQuarter) FontWeight.Bold else FontWeight.Normal
+                                color = if (quarter == currentQuarter && !isFinished) BasketOrange else TextWhite,
+                                fontWeight = if (quarter == currentQuarter && !isFinished) FontWeight.Bold else FontWeight.Normal
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
+                Spacer(modifier = Modifier.height(10.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = CourtLightSlate.copy(alpha = 0.5f)),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Box(modifier = Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = narration,
-                            fontSize = 12.sp,
-                            color = TextWhite,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center
-                        )
+                        Text(narration, fontSize = 12.sp, color = TextWhite, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
                     }
+                }
+
+                if (isUserGame && !isFinished) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Em quadra: ${activeLineup.joinToString(" • ") { it.name }}",
+                        color = TextMuted,
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                if (!isFinished && !isHalftime && !isLiveCoachingActive) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            isPaused = !isPaused
+                            narration = if (isPaused) {
+                                "⏸️ Jogo pausado em Q$currentQuarter $quarterClock. Você pode ajustar a rotação."
+                            } else {
+                                "▶️ Jogo retomado em Q$currentQuarter $quarterClock."
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (isPaused) ElectricCyan else CourtLightSlate),
+                        border = BorderStroke(1.dp, if (isPaused) ElectricCyan else CourtBorder),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(if (isPaused) "▶️ CONTINUAR JOGO" else "⏸️ PAUSAR", color = TextWhite, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (isUserGame && isPaused && !isHalftime && !isFinished && !isLiveCoachingActive) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ManualSubstitutionPanel(
+                        roster = team.players,
+                        activeLineup = activeLineup,
+                        selectedOutId = selectedPlayerOutId,
+                        selectedInId = selectedPlayerInId,
+                        onSelectOut = { selectedPlayerOutId = it },
+                        onSelectIn = { selectedPlayerInId = it },
+                        onConfirm = {
+                            val playerOutId = selectedPlayerOutId
+                            val playerInId = selectedPlayerInId
+                            if (playerOutId != null && playerInId != null) {
+                                val substitution = LiveLineupRules.substitute(
+                                    roster = team.players,
+                                    activeLineup = activeLineup,
+                                    playerOutId = playerOutId,
+                                    playerInId = playerInId
+                                )
+                                if (substitution != null) {
+                                    replaceActiveLineup(substitution.lineup)
+                                    narration = "🔄 Substituição: ${substitution.playerIn.name} entra no lugar de ${substitution.playerOut.name}."
+                                    selectedPlayerOutId = null
+                                    selectedPlayerInId = null
+                                }
+                            }
+                        }
+                    )
                 }
 
                 if (isLiveCoachingActive) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.5.dp, ChampionshipGold, RoundedCornerShape(14.dp)),
+                        modifier = Modifier.fillMaxWidth().border(1.5.dp, ChampionshipGold, RoundedCornerShape(14.dp)),
                         colors = CardDefaults.cardColors(containerColor = CourtDeepSlate),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SportsBasketball,
-                                    contentDescription = null,
-                                    tint = BasketOrange,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Text(
-                                    text = "⏱️ MODO TÉCNICO EM TEMPO REAL",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = ChampionshipGold
-                                )
+                        Column(modifier = Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.SportsBasketball, contentDescription = null, tint = BasketOrange, modifier = Modifier.size(18.dp))
+                                Text("⏱️ MODO TÉCNICO EM TEMPO REAL", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = ChampionshipGold)
                             }
+                            Text("4º quarto (0:15) • Chamada tática decisiva", fontSize = 11.sp, color = TextMuted, modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
 
-                            Text(
-                                text = "4º Quarto (0:15) • Chamada Tática Decisiva",
-                                fontSize = 11.sp,
-                                color = TextMuted,
-                                modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
-                            )
-
-                            // Timeout button
                             Button(
                                 onClick = {
                                     if (timeoutsRemaining > 0) {
                                         timeoutsRemaining--
                                         timeoutBoost = 0.20
-                                        narration = "⏱️ TIMEOUT SOLICITADO! Sua equipe se reúne no banco de reservas com a prancheta tática.\nFoco e energia restaurados (+20% de precisão na última jogada)!"
+                                        narration = "⏱️ TIMEOUT! Sua equipe ganha +20% de precisão na chamada decisiva."
                                     }
                                 },
                                 enabled = timeoutsRemaining > 0,
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = ElectricCyan.copy(alpha = 0.25f),
-                                    disabledContainerColor = CourtLightSlate.copy(alpha = 0.3f)
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, if (timeoutsRemaining > 0) ElectricCyan else CourtBorder),
+                                colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan.copy(alpha = 0.25f)),
+                                border = BorderStroke(1.dp, if (timeoutsRemaining > 0) ElectricCyan else CourtBorder),
                                 shape = RoundedCornerShape(10.dp)
                             ) {
-                                Text(
-                                    text = if (timeoutsRemaining > 0) "⏱️ PEDIR TEMPO / TIMEOUT ($timeoutsRemaining RESTANTES)" else "⏱️ TIMEOUTS ESGOTADOS",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (timeoutsRemaining > 0) ElectricCyan else TextMuted
-                                )
+                                Text(if (timeoutsRemaining > 0) "⏱️ TIMEOUT ($timeoutsRemaining restantes)" else "⏱️ TIMEOUTS ESGOTADOS", color = TextWhite, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Text(
-                                text = "✍️ DESENHAR ÚLTIMA JOGADA DE ATAQUE:",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextWhite,
-                                modifier = Modifier.align(Alignment.Start)
-                            )
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            // 3-Point Shot Play
-                            Button(
-                                onClick = { executeClutchPlay("3PT") },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = BasketOrange),
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Text("🎯 Arremesso de 3 Pontos (Virada/Empate)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                            }
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            // Drive in Paint Play
-                            Button(
-                                onClick = { executeClutchPlay("PAINT") },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = CourtLightSlate),
-                                shape = RoundedCornerShape(10.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, CourtBorder)
-                            ) {
-                                Text("💥 Infiltração no Garrafão (Cavar Falta / Bandeja)", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                            }
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            // Star Isolation Play
-                            Button(
-                                onClick = { executeClutchPlay("ISO") },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = CourtLightSlate),
-                                shape = RoundedCornerShape(10.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, ChampionshipGold.copy(alpha = 0.6f))
-                            ) {
-                                Text("🌟 Isolamento da Estrela ($starName)", color = ChampionshipGold, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                            }
-
                             Spacer(modifier = Modifier.height(8.dp))
-
-                            // Tactical Foul Button
-                            OutlinedButton(
-                                onClick = { executeClutchPlay("FOUL") },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444))
-                            ) {
-                                Text("🛑 Falta Tática (Parar o Relógio)", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Button(onClick = { executeClutchPlay("3PT") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = BasketOrange)) {
+                                Text("🎯 Arremesso de 3 pontos", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Button(onClick = { executeClutchPlay("PAINT") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = CourtLightSlate)) {
+                                Text("💥 Infiltração no garrafão", color = TextWhite, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Button(onClick = { executeClutchPlay("ISO") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = CourtLightSlate)) {
+                                Text("🌟 Isolamento da estrela ($starName)", color = ChampionshipGold, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedButton(onClick = { executeClutchPlay("FOUL") }, modifier = Modifier.fillMaxWidth(), border = BorderStroke(1.dp, ErrorRed)) {
+                                Text("🛑 Falta tática", color = ErrorRed, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
 
                 if (isHalftime) {
+                    Spacer(modifier = Modifier.height(12.dp))
                     if (isUserGame) {
-                        val tacticsObj = viewModel.tactics ?: Tactics()
-                        var style by remember { mutableStateOf(tacticsObj.style) }
-                        var pace by remember { mutableStateOf(tacticsObj.pace.toFloat()) }
-                        var defPressure by remember { mutableStateOf(tacticsObj.defensivePressure.toFloat()) }
-                        var offReb by remember { mutableStateOf(tacticsObj.offensiveRebound.toFloat()) }
-                        
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = CourtLightSlate),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
+                        val tactics = viewModel.tactics ?: Tactics()
+                        var style by remember { mutableStateOf(tactics.style) }
+                        var pace by remember { mutableStateOf(tactics.pace.toFloat()) }
+                        var defensivePressure by remember { mutableStateOf(tactics.defensivePressure.toFloat()) }
+                        var offensiveRebound by remember { mutableStateOf(tactics.offensiveRebound.toFloat()) }
+
+                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = CourtLightSlate), shape = RoundedCornerShape(12.dp)) {
                             Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "⚙️ AJUSTE TÁTICO NO INTERVALO",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = ChampionshipGold,
-                                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                                )
+                                Text("⚙️ AJUSTE TÁTICO NO INTERVALO", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ChampionshipGold, modifier = Modifier.align(Alignment.CenterHorizontally))
                                 Spacer(modifier = Modifier.height(8.dp))
-                                
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    PlayStyle.entries.forEach { pStyle ->
-                                        val isSelected = style == pStyle
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    PlayStyle.entries.forEach { playStyle ->
+                                        val selected = style == playStyle
                                         Box(
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .clip(RoundedCornerShape(6.dp))
-                                                .background(if (isSelected) BasketOrange else CourtDeepSlate)
+                                                .background(if (selected) BasketOrange else CourtDeepSlate)
                                                 .clickable {
-                                                    style = pStyle
-                                                    tacticsObj.style = pStyle
-                                                    val (newPace, newDef, newOff) = when (pStyle) {
+                                                    style = playStyle
+                                                    tactics.style = playStyle
+                                                    val values = when (playStyle) {
                                                         PlayStyle.FAST_BREAK -> Triple(85, 60, 70)
                                                         PlayStyle.HALF_COURT -> Triple(30, 50, 40)
                                                         PlayStyle.DEFENSIVE -> Triple(35, 85, 30)
                                                         PlayStyle.BALANCED -> Triple(50, 50, 50)
                                                     }
-                                                    pace = newPace.toFloat()
-                                                    defPressure = newDef.toFloat()
-                                                    offReb = newOff.toFloat()
-
-                                                    tacticsObj.pace = newPace
-                                                    tacticsObj.defensivePressure = newDef
-                                                    tacticsObj.offensiveRebound = newOff
+                                                    pace = values.first.toFloat()
+                                                    defensivePressure = values.second.toFloat()
+                                                    offensiveRebound = values.third.toFloat()
+                                                    tactics.pace = values.first
+                                                    tactics.defensivePressure = values.second
+                                                    tactics.offensiveRebound = values.third
                                                     viewModel.saveGame()
                                                 }
-                                                .padding(vertical = 6.dp),
+                                                .padding(vertical = 7.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
-                                                text = when(pStyle) {
+                                                text = when (playStyle) {
                                                     PlayStyle.FAST_BREAK -> "Corrida"
                                                     PlayStyle.HALF_COURT -> "Meio-C"
                                                     PlayStyle.BALANCED -> "Equilib"
@@ -686,126 +722,51 @@ fun PartidaDialog(
                                         }
                                     }
                                 }
-                                
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text("Ritmo (Pace): ${pace.toInt()}", color = TextWhite, fontSize = 11.sp)
-                                Slider(
-                                    value = pace,
-                                    onValueChange = {
-                                        pace = it
-                                        tacticsObj.pace = it.toInt()
-                                        viewModel.saveGame()
-                                    },
-                                    valueRange = 0f..100f,
-                                    modifier = Modifier.height(24.dp),
-                                    colors = SliderDefaults.colors(thumbColor = BasketOrange, activeTrackColor = BasketOrange)
-                                )
-                                
-                                Text("Pressão Defensiva: ${defPressure.toInt()}%", color = TextWhite, fontSize = 11.sp)
-                                Slider(
-                                    value = defPressure,
-                                    onValueChange = {
-                                        defPressure = it
-                                        tacticsObj.defensivePressure = it.toInt()
-                                        viewModel.saveGame()
-                                    },
-                                    valueRange = 0f..100f,
-                                    modifier = Modifier.height(24.dp),
-                                    colors = SliderDefaults.colors(thumbColor = BasketOrange, activeTrackColor = BasketOrange)
-                                )
+                                Text("Ritmo: ${pace.toInt()}", color = TextWhite, fontSize = 11.sp)
+                                Slider(value = pace, onValueChange = { pace = it; tactics.pace = it.toInt() }, valueRange = 0f..100f, colors = SliderDefaults.colors(thumbColor = BasketOrange, activeTrackColor = BasketOrange))
+                                Text("Pressão defensiva: ${defensivePressure.toInt()}%", color = TextWhite, fontSize = 11.sp)
+                                Slider(value = defensivePressure, onValueChange = { defensivePressure = it; tactics.defensivePressure = it.toInt() }, valueRange = 0f..100f, colors = SliderDefaults.colors(thumbColor = BasketOrange, activeTrackColor = BasketOrange))
+                                Text("Rebote ofensivo: ${offensiveRebound.toInt()}%", color = TextWhite, fontSize = 11.sp)
+                                Slider(value = offensiveRebound, onValueChange = { offensiveRebound = it; tactics.offensiveRebound = it.toInt() }, valueRange = 0f..100f, colors = SliderDefaults.colors(thumbColor = BasketOrange, activeTrackColor = BasketOrange))
 
-                                Text("Rebote Ofensivo: ${offReb.toInt()}%", color = TextWhite, fontSize = 11.sp)
-                                Slider(
-                                    value = offReb,
-                                    onValueChange = {
-                                        offReb = it
-                                        tacticsObj.offensiveRebound = it.toInt()
-                                        viewModel.saveGame()
-                                    },
-                                    valueRange = 0f..100f,
-                                    modifier = Modifier.height(24.dp),
-                                    colors = SliderDefaults.colors(thumbColor = BasketOrange, activeTrackColor = BasketOrange)
-                                )
-
-                                Spacer(modifier = Modifier.height(6.dp))
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(CourtDeepSlate)
-                                        .clickable {
-                                            viewModel.autoSubstitutionsEnabled = !viewModel.autoSubstitutionsEnabled
-                                            viewModel.saveGame()
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(CourtDeepSlate).padding(horizontal = 8.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(imageVector = Icons.Default.SwapHoriz, contentDescription = null, tint = BasketOrange, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = BasketOrange, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Substituições Automáticas", color = TextWhite, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("Substituições automáticas", color = TextWhite, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                     Switch(
                                         checked = viewModel.autoSubstitutionsEnabled,
-                                        onCheckedChange = {
-                                            viewModel.autoSubstitutionsEnabled = it
-                                            viewModel.saveGame()
-                                        },
-                                        modifier = Modifier.height(20.dp),
+                                        onCheckedChange = { viewModel.autoSubstitutionsEnabled = it; viewModel.saveGame() },
                                         colors = SwitchDefaults.colors(checkedThumbColor = BasketOrange, checkedTrackColor = BasketOrange.copy(alpha = 0.5f))
                                     )
                                 }
-
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Button(
                                     onClick = {
+                                        viewModel.saveGame()
                                         isHalftime = false
                                         currentQuarter = 3
                                     },
                                     modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BasketOrange),
-                                    shape = RoundedCornerShape(8.dp)
+                                    colors = ButtonDefaults.buttonColors(containerColor = BasketOrange)
                                 ) {
-                                    Text("CONTINUAR JOGO ➡️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("CONTINUAR JOGO ➡️", color = Color.White, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     } else {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = CourtLightSlate),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "INTERVALO DE JOGO ☕",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = ChampionshipGold
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "As equipes se preparam no vestiário para o 2º tempo.",
-                                    fontSize = 11.sp,
-                                    color = TextWhite,
-                                    textAlign = TextAlign.Center
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Button(
-                                    onClick = {
-                                        isHalftime = false
-                                        currentQuarter = 3
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BasketOrange),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("CONTINUAR JOGO ➡️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = CourtLightSlate)) {
+                            Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("INTERVALO DE JOGO ☕", fontWeight = FontWeight.Bold, color = ChampionshipGold)
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(onClick = { isHalftime = false; currentQuarter = 3 }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = BasketOrange)) {
+                                    Text("CONTINUAR JOGO ➡️", color = Color.White, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -815,65 +776,31 @@ fun PartidaDialog(
                 if (isFinished) {
                     simResult?.let { result ->
                         Spacer(modifier = Modifier.height(12.dp))
-                        
-                        // MVP Player Row
                         val allStats = result.homeStats.entries + result.awayStats.entries
                         val mvpEntry = allStats.maxByOrNull { it.value.points }
                         if (mvpEntry != null) {
-                            val mvpPlayer = mvpEntry.key
-                            val mvpStats = mvpEntry.value
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = CourtLightSlate),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(8.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
+                            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = CourtLightSlate), shape = RoundedCornerShape(8.dp)) {
+                                Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text("⭐ MVP DO JOGO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = ChampionshipGold)
-                                    Text(mvpPlayer.name, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextWhite)
-                                    Text("${mvpStats.points} PTS • ${mvpStats.rebounds} REB • ${mvpStats.assists} AST", fontSize = 11.sp, color = BasketOrange)
+                                    Text(mvpEntry.key.name, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextWhite)
+                                    Text("${mvpEntry.value.points} PTS • ${mvpEntry.value.rebounds} REB • ${mvpEntry.value.assists} AST", fontSize = 11.sp, color = BasketOrange)
                                 }
                             }
                         }
-
                         Spacer(modifier = Modifier.height(8.dp))
                         val arenaName = if (isHome) team.arena.name else opponent.arena.name
-                        Text(
-                            text = "Público: ${String.format("%,d", result.attendance).replace(',', '.')} • Arena: $arenaName",
-                            fontSize = 10.sp,
-                            color = TextGray,
-                            textAlign = TextAlign.Center
-                        )
-
+                        Text("Público: ${String.format("%,d", result.attendance).replace(',', '.')} • Arena: $arenaName", fontSize = 10.sp, color = TextGray, textAlign = TextAlign.Center)
                         if (result.injuries.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             result.injuries.forEach { injury ->
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = ErrorRed.copy(alpha = 0.15f)),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        text = "🚑 Lesão: ${injury.player.name} fora por ${injury.daysOut} dias!",
-                                        color = ErrorRed,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(6.dp)
-                                    )
+                                Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = ErrorRed.copy(alpha = 0.15f))) {
+                                    Text("🚑 Lesão: ${injury.player.name} fora por ${injury.daysOut} dias!", color = ErrorRed, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(6.dp))
                                 }
                             }
                         }
                     }
-
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = { onDismiss() },
-                        colors = ButtonDefaults.buttonColors(containerColor = BasketOrange),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
+                    Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = BasketOrange), modifier = Modifier.fillMaxWidth()) {
                         Text("FECHAR E SALVAR", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -882,3 +809,72 @@ fun PartidaDialog(
     }
 }
 
+@Composable
+private fun ManualSubstitutionPanel(
+    roster: List<Player>,
+    activeLineup: List<Player>,
+    selectedOutId: Int?,
+    selectedInId: Int?,
+    onSelectOut: (Int) -> Unit,
+    onSelectIn: (Int) -> Unit,
+    onConfirm: () -> Unit
+) {
+    val bench = LiveLineupRules.bench(roster, activeLineup)
+    Card(
+        modifier = Modifier.fillMaxWidth().border(1.dp, BasketOrange, RoundedCornerShape(12.dp)),
+        colors = CardDefaults.cardColors(containerColor = CourtLightSlate),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("🔄 SUBSTITUIÇÃO MANUAL", color = ChampionshipGold, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+            Text("Escolha quem sai e quem entra. A troca vale apenas para esta partida.", color = TextMuted, fontSize = 10.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("SAI DA QUADRA", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+            activeLineup.forEach { player ->
+                PlayerChoiceRow(player = player, selected = selectedOutId == player.id, onClick = { onSelectOut(player.id) })
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("ENTRA EM QUADRA", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+            if (bench.isEmpty()) {
+                Text("Nenhum reserva disponível.", color = TextMuted, fontSize = 10.sp)
+            } else {
+                bench.forEach { player ->
+                    PlayerChoiceRow(player = player, selected = selectedInId == player.id, onClick = { onSelectIn(player.id) })
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onConfirm,
+                enabled = selectedOutId != null && selectedInId != null,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = BasketOrange),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("CONFIRMAR TROCA", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerChoiceRow(
+    player: Player,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(if (selected) BasketOrange.copy(alpha = 0.28f) else CourtDeepSlate)
+            .border(1.dp, if (selected) BasketOrange else CourtBorder, RoundedCornerShape(7.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(player.name, color = TextWhite, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
+        Text("${player.position} • OVR ${player.overall}", color = if (selected) ChampionshipGold else TextMuted, fontSize = 10.sp)
+    }
+}
