@@ -136,6 +136,8 @@ fun PartidaDialog(
     var courtLastScoreSide by remember { mutableStateOf<LiveScoringSide?>(null) }
     var courtLastScorePoints by remember { mutableStateOf(0) }
     var courtLastScoreElapsedMillis by remember { mutableStateOf(-1L) }
+    var courtNextScorePoints by remember { mutableStateOf(0) }
+    var courtNextScoreElapsedMillis by remember { mutableStateOf(-1L) }
 
     var selectedPlayerOutId by remember { mutableStateOf<Int?>(null) }
     var selectedPlayerInId by remember { mutableStateOf<Int?>(null) }
@@ -370,6 +372,8 @@ fun PartidaDialog(
         courtLastScoreSide = null
         courtLastScorePoints = 0
         courtLastScoreElapsedMillis = -1L
+        courtNextScorePoints = 0
+        courtNextScoreElapsedMillis = -1L
         narration = "${currentQuarter}º quarto em andamento. O relógio acelerado começou!"
 
         val tactics = if (isUserGame) viewModel.tactics ?: Tactics() else Tactics()
@@ -412,7 +416,10 @@ fun PartidaDialog(
         qUserScores.add(0)
         qOppScores.add(0)
         val timeline = LiveScoringTimeline.build(quarterUserPoints, quarterOpponentPoints)
-        courtPossessionSide = timeline.firstOrNull()?.side ?: LiveScoringSide.USER
+        val firstScoringEvent = timeline.firstOrNull()
+        courtPossessionSide = firstScoringEvent?.side ?: LiveScoringSide.USER
+        courtNextScorePoints = firstScoringEvent?.points ?: 0
+        courtNextScoreElapsedMillis = firstScoringEvent?.elapsedMillis ?: -1L
         var elapsedMillis = 0L
         var nextEvent = 0
 
@@ -432,7 +439,10 @@ fun PartidaDialog(
                 courtLastScoreSide = scoringEvent.side
                 courtLastScorePoints = scoringEvent.points
                 courtLastScoreElapsedMillis = elapsedMillis
-                courtPossessionSide = timeline.getOrNull(nextEvent)?.side ?: scoringEvent.side
+                val upcomingScoringEvent = timeline.getOrNull(nextEvent)
+                courtPossessionSide = upcomingScoringEvent?.side ?: scoringEvent.side
+                courtNextScorePoints = upcomingScoringEvent?.points ?: 0
+                courtNextScoreElapsedMillis = upcomingScoringEvent?.elapsedMillis ?: -1L
                 when (scoringEvent.side) {
                     LiveScoringSide.USER -> {
                         userScore += scoringEvent.points
@@ -611,6 +621,8 @@ fun PartidaDialog(
                         lastScoreSide = courtLastScoreSide,
                         lastScorePoints = courtLastScorePoints,
                         lastScoreElapsedMillis = courtLastScoreElapsedMillis,
+                        nextScorePoints = courtNextScorePoints,
+                        nextScoreElapsedMillis = courtNextScoreElapsedMillis,
                         isPaused = isPaused
                     )
                 }
