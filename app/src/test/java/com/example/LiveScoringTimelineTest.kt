@@ -26,11 +26,12 @@ class LiveScoringTimelineTest {
     }
 
     @Test
-    fun acceleratedClockMapsOneRealMinuteToTwelveGameMinutes() {
+    fun acceleratedClockMapsThirtyRealSecondsToTwelveGameMinutes() {
+        assertEquals(30_000L, LiveScoringTimeline.QUARTER_REAL_DURATION_MS)
         assertEquals("12:00", LiveScoringTimeline.clockForElapsed(0))
-        assertEquals("06:00", LiveScoringTimeline.clockForElapsed(30_000))
+        assertEquals("06:00", LiveScoringTimeline.clockForElapsed(15_000))
+        assertEquals("00:00", LiveScoringTimeline.clockForElapsed(30_000))
         assertEquals("00:00", LiveScoringTimeline.clockForElapsed(60_000))
-        assertEquals("00:00", LiveScoringTimeline.clockForElapsed(90_000))
     }
 
     @Test
