@@ -99,6 +99,10 @@ object LiveCourtPlayPlanner {
      * deliberately use fewer visible passes instead of cramming several movements into a few
      * frames. If a play was planned with passes, at least one transfer remains visible so the ball
      * never teleports to a cutter, roller, post player, or perimeter shooter.
+     *
+     * Transition deliberately receives a little more of the possession than before. This gives
+     * the five markers time to leave the previous scoring end, cross into shape, and only then
+     * organize the next action, reducing the abrupt post-basket reset without changing event time.
      */
     fun flow(
         progress: Float,
@@ -110,14 +114,14 @@ object LiveCourtPlayPlanner {
 
         val clamped = progress.coerceIn(0f, 1f)
         val transitionEnd = when {
-            possessionDurationMillis < 1_200L -> 0.16f
-            possessionDurationMillis < 1_800L -> 0.20f
-            else -> 0.23f
+            possessionDurationMillis < 1_200L -> 0.22f
+            possessionDurationMillis < 1_800L -> 0.26f
+            else -> 0.29f
         }
         val setupEnd = when {
-            possessionDurationMillis < 1_200L -> 0.34f
-            possessionDurationMillis < 1_800L -> 0.40f
-            else -> 0.45f
+            possessionDurationMillis < 1_200L -> 0.36f
+            possessionDurationMillis < 1_800L -> 0.42f
+            else -> 0.46f
         }
         val actionEnd = when {
             possessionDurationMillis < 1_200L -> 0.76f
