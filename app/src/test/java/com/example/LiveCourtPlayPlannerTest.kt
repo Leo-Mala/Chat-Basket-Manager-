@@ -105,6 +105,26 @@ class LiveCourtPlayPlannerTest {
     }
 
     @Test
+    fun `transition keeps more room after a basket before setup begins`() {
+        assertEquals(
+            LiveCourtPossessionPhase.TRANSITION,
+            LiveCourtPlayPlanner.flow(0.21f, 900L, 2).phase
+        )
+        assertEquals(
+            LiveCourtPossessionPhase.TRANSITION,
+            LiveCourtPlayPlanner.flow(0.25f, 1_500L, 2).phase
+        )
+        assertEquals(
+            LiveCourtPossessionPhase.TRANSITION,
+            LiveCourtPlayPlanner.flow(0.28f, 2_400L, 2).phase
+        )
+        assertEquals(
+            LiveCourtPossessionPhase.SETUP,
+            LiveCourtPlayPlanner.flow(0.30f, 2_400L, 2).phase
+        )
+    }
+
+    @Test
     fun `short possessions reduce extra visible passes without teleporting ball`() {
         assertEquals(
             1,
