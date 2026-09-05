@@ -131,6 +131,11 @@ fun PartidaDialog(
     val qOppScores = remember { mutableStateListOf<Int>() }
     var simResult by remember { mutableStateOf<GameSimulator.GameResult?>(null) }
     var narration by remember { mutableStateOf("Início do jogo! A bola está ao alto!") }
+    var quarterElapsedMillis by remember { mutableStateOf(0L) }
+    var courtPossessionSide by remember { mutableStateOf(LiveScoringSide.USER) }
+    var courtLastScoreSide by remember { mutableStateOf<LiveScoringSide?>(null) }
+    var courtLastScorePoints by remember { mutableStateOf(0) }
+    var courtLastScoreElapsedMillis by remember { mutableStateOf(-1L) }
 
     var selectedPlayerOutId by remember { mutableStateOf<Int?>(null) }
     var selectedPlayerInId by remember { mutableStateOf<Int?>(null) }
@@ -360,6 +365,11 @@ fun PartidaDialog(
         selectedPlayerOutId = null
         selectedPlayerInId = null
         quarterClock = "12:00"
+        quarterElapsedMillis = 0L
+        courtPossessionSide = LiveScoringSide.USER
+        courtLastScoreSide = null
+        courtLastScorePoints = 0
+        courtLastScoreElapsedMillis = -1L
         narration = "${currentQuarter}º quarto em andamento. O relógio acelerado começou!"
 
         val tactics = if (isUserGame) viewModel.tactics ?: Tactics() else Tactics()
@@ -402,6 +412,7 @@ fun PartidaDialog(
         qUserScores.add(0)
         qOppScores.add(0)
         val timeline = LiveScoringTimeline.build(quarterUserPoints, quarterOpponentPoints)
+        courtPossessionSide = timeline.firstOrNull()?.side ?: LiveScoringSide.USER
         var elapsedMillis = 0L
         var nextEvent = 0
 
@@ -413,10 +424,15 @@ fun PartidaDialog(
                 LiveScoringTimeline.QUARTER_REAL_DURATION_MS,
                 elapsedMillis + LiveScoringTimeline.UI_TICK_MS
             )
+            quarterElapsedMillis = elapsedMillis
             quarterClock = LiveScoringTimeline.clockForElapsed(elapsedMillis)
 
             while (nextEvent < timeline.size && timeline[nextEvent].elapsedMillis <= elapsedMillis) {
                 val scoringEvent = timeline[nextEvent++]
+                courtLastScoreSide = scoringEvent.side
+                courtLastScorePoints = scoringEvent.points
+                courtLastScoreElapsedMillis = elapsedMillis
+                courtPossessionSide = timeline.getOrNull(nextEvent)?.side ?: scoringEvent.side
                 when (scoringEvent.side) {
                     LiveScoringSide.USER -> {
                         userScore += scoringEvent.points
@@ -440,6 +456,7 @@ fun PartidaDialog(
             }
         }
 
+        quarterElapsedMillis = LiveScoringTimeline.QUARTER_REAL_DURATION_MS
         quarterClock = "00:00"
         val automaticRotationLog = applyAutomaticRotation(currentQuarter)
         val baseMessage = when (currentQuarter) {
@@ -498,7 +515,7 @@ fun PartidaDialog(
                 )
                 if (!isFinished) {
                     Text(
-                        text = "Q$currentQuarter • $quarterClock  ·  1 quarto = 1 min",
+                        text = "Q$currentQuarter • $quarterClock  ·  1 quarto = 30 s",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Black,
                         color = if (isPaused) ChampionshipGold else ElectricCyan
@@ -581,6 +598,21 @@ fun PartidaDialog(
                     ) {
                         Text(if (isPaused) "▶️ CONTINUAR JOGO" else "⏸️ PAUSAR", color = TextWhite, fontWeight = FontWeight.Bold)
                     }
+                }
+
+                if (!isFinished && !isHalftime && !isLiveCoachingActive) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    LiveCourtAnimation(
+                        userTeamName = team.name,
+                        opponentName = opponent.name,
+                        currentQuarter = currentQuarter,
+                        elapsedMillis = quarterElapsedMillis,
+                        possessionSide = courtPossessionSide,
+                        lastScoreSide = courtLastScoreSide,
+                        lastScorePoints = courtLastScorePoints,
+                        lastScoreElapsedMillis = courtLastScoreElapsedMillis,
+                        isPaused = isPaused
+                    )
                 }
 
                 if (isUserGame && isPaused && !isHalftime && !isFinished && !isLiveCoachingActive) {
