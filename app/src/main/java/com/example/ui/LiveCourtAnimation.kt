@@ -27,6 +27,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.domain.rules.LiveCourtPlayPlanner
+import com.example.domain.rules.LiveCourtPlayStyle
 import com.example.domain.rules.LiveScoringSide
 import com.example.ui.theme.BasketOrange
 import com.example.ui.theme.ChampionshipGold
@@ -40,8 +42,9 @@ import kotlin.math.sin
 
 /**
  * Pure presentation layer for the live match. It never creates scoring events or changes game
- * state: positions are derived only from the active quarter clock and the already-generated
- * scoring timeline. Because elapsedMillis stops while paused, the court freezes as well.
+ * state. The match engine still decides every point; this component only stages the already-known
+ * next scoring event as a richer visual possession. Because elapsedMillis stops while paused, the
+ * entire court freezes with the match clock.
  */
 @Composable
 fun LiveCourtAnimation(
@@ -53,6 +56,8 @@ fun LiveCourtAnimation(
     lastScoreSide: LiveScoringSide?,
     lastScorePoints: Int,
     lastScoreElapsedMillis: Long,
+    nextScorePoints: Int,
+    nextScoreElapsedMillis: Long,
     isPaused: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -61,6 +66,28 @@ fun LiveCourtAnimation(
         LiveScoringSide.USER -> userTeamName
         LiveScoringSide.OPPONENT -> opponentName
         null -> null
+    }
+    val playPlan = if (nextScorePoints in 1..3 && nextScoreElapsedMillis >= 0L) {
+        LiveCourtPlayPlanner.plan(
+            points = nextScorePoints,
+            side = possessionSide,
+            quarter = currentQuarter,
+            eventElapsedMillis = nextScoreElapsedMillis
+        )
+    } else {
+        null
+    }
+    val playLabel = when (playPlan?.style) {
+        LiveCourtPlayStyle.FREE_THROW -> "Lance livre"
+        LiveCourtPlayStyle.DRIVE -> "Infiltração"
+        LiveCourtPlayStyle.CUT -> "Corte para a cesta"
+        LiveCourtPlayStyle.PICK_AND_ROLL -> "Pick-and-roll"
+        LiveCourtPlayStyle.POST_UP -> "Jogo no poste"
+        LiveCourtPlayStyle.MID_RANGE -> "Média distância"
+        LiveCourtPlayStyle.CORNER_THREE,
+        LiveCourtPlayStyle.WING_THREE,
+        LiveCourtPlayStyle.TOP_THREE -> "Movimentação no perímetro"
+        null -> "Posse em movimento"
     }
 
     Column(
@@ -116,10 +143,7 @@ fun LiveCourtAnimation(
                 val markerRadius = minOf(w, h) * 0.032f
                 val ballRadius = markerRadius * 0.52f
 
-                drawRoundRect(
-                    color = wood,
-                    cornerRadius = CornerRadius(12f, 12f)
-                )
+                drawRoundRect(color = wood, cornerRadius = CornerRadius(12f, 12f))
                 drawRoundRect(
                     color = lineColor,
                     cornerRadius = CornerRadius(12f, 12f),
@@ -169,39 +193,162 @@ fun LiveCourtAnimation(
                     style = Stroke(width = 2.5f)
                 )
 
-                val phase = ((elapsedMillis % 4_000L).toFloat() / 4_000f) * (2f * PI.toFloat())
+                val phase = ((elapsedMillis % 2_000L).toFloat() / 2_000f) * (2f * PI.toFloat())
                 val userAttacksRight = currentQuarter % 2 == 1
                 val offenseSide = possessionSide
                 val offenseAttacksRight = if (offenseSide == LiveScoringSide.USER) userAttacksRight else !userAttacksRight
 
-                fun mirroredX(x: Float, attacksRight: Boolean): Float = if (attacksRight) x else 1f - x
+                fun smooth(value: Float): Float {
+                    val t = value.coerceIn(0f, 1f)
+                    return t * t * (3f - 2f * t)
+                }
 
-                fun offensePoint(index: Int, attacksRight: Boolean): Offset {
-                    val baseX = floatArrayOf(0.39f, 0.47f, 0.56f, 0.63f, 0.70f)[index]
-                    val baseY = floatArrayOf(0.22f, 0.76f, 0.47f, 0.31f, 0.65f)[index]
-                    val dx = sin(phase + index * 0.83f) * 0.025f
-                    val dy = sin(phase * 1.35f + index * 1.21f) * 0.035f
-                    return Offset(
-                        w * mirroredX((baseX + dx).coerceIn(0.12f, 0.88f), attacksRight),
-                        h * (baseY + dy).coerceIn(0.10f, 0.90f)
+                fun lerp(a: Offset, b: Offset, progress: Float): Offset {
+                    val t = progress.coerceIn(0f, 1f)
+                    return Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+                }
+
+                fun courtPoint(normalized: Offset): Offset {
+                    val normalizedX = if (offenseAttacksRight) normalized.x else 1f - normalized.x
+                    return Offset(w * normalizedX, h * normalized.y)
+                }
+
+                val possessionStartMillis = if (lastScoreElapsedMillis >= 0L) lastScoreElapsedMillis else 0L
+                val possessionDuration = nextScoreElapsedMillis - possessionStartMillis
+                val playProgress = if (playPlan != null && possessionDuration > 0L) {
+                    ((elapsedMillis - possessionStartMillis).toFloat() / possessionDuration.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    ((elapsedMillis % 1_800L).toFloat() / 1_800f).coerceIn(0f, 1f)
+                }
+
+                val baseOffense = listOf(
+                    Offset(0.55f, 0.50f),
+                    Offset(0.64f, 0.24f),
+                    Offset(0.64f, 0.76f),
+                    Offset(0.76f, 0.14f),
+                    Offset(0.76f, 0.86f)
+                )
+
+                val targetOffense = when (playPlan?.style) {
+                    LiveCourtPlayStyle.FREE_THROW -> listOf(
+                        Offset(0.835f, 0.50f),
+                        Offset(0.77f, 0.37f),
+                        Offset(0.77f, 0.63f),
+                        Offset(0.73f, 0.43f),
+                        Offset(0.73f, 0.57f)
+                    )
+                    LiveCourtPlayStyle.DRIVE -> listOf(
+                        Offset(0.885f, 0.50f),
+                        Offset(0.68f, 0.20f),
+                        Offset(0.68f, 0.80f),
+                        Offset(0.78f, 0.13f),
+                        Offset(0.78f, 0.87f)
+                    )
+                    LiveCourtPlayStyle.CUT -> listOf(
+                        Offset(0.62f, 0.50f),
+                        Offset(0.885f, 0.43f),
+                        Offset(0.66f, 0.75f),
+                        Offset(0.78f, 0.15f),
+                        Offset(0.76f, 0.84f)
+                    )
+                    LiveCourtPlayStyle.PICK_AND_ROLL -> listOf(
+                        Offset(0.69f, 0.39f),
+                        Offset(0.67f, 0.20f),
+                        Offset(0.66f, 0.79f),
+                        Offset(0.78f, 0.14f),
+                        Offset(0.885f, 0.56f)
+                    )
+                    LiveCourtPlayStyle.POST_UP -> listOf(
+                        Offset(0.61f, 0.50f),
+                        Offset(0.67f, 0.22f),
+                        Offset(0.67f, 0.78f),
+                        Offset(0.78f, 0.14f),
+                        Offset(0.845f, 0.61f)
+                    )
+                    LiveCourtPlayStyle.MID_RANGE -> listOf(
+                        Offset(0.61f, 0.50f),
+                        Offset(0.68f, 0.23f),
+                        Offset(0.79f, 0.64f),
+                        Offset(0.78f, 0.15f),
+                        Offset(0.75f, 0.83f)
+                    )
+                    LiveCourtPlayStyle.CORNER_THREE -> listOf(
+                        Offset(0.61f, 0.50f),
+                        Offset(0.68f, 0.28f),
+                        Offset(0.68f, 0.73f),
+                        Offset(0.80f, 0.10f),
+                        Offset(0.77f, 0.86f)
+                    )
+                    LiveCourtPlayStyle.WING_THREE -> listOf(
+                        Offset(0.61f, 0.50f),
+                        Offset(0.73f, 0.27f),
+                        Offset(0.67f, 0.75f),
+                        Offset(0.79f, 0.12f),
+                        Offset(0.76f, 0.85f)
+                    )
+                    LiveCourtPlayStyle.TOP_THREE -> listOf(
+                        Offset(0.69f, 0.50f),
+                        Offset(0.67f, 0.24f),
+                        Offset(0.67f, 0.76f),
+                        Offset(0.79f, 0.13f),
+                        Offset(0.79f, 0.87f)
+                    )
+                    null -> baseOffense
+                }
+
+                fun stagedPlayerProgress(index: Int): Float {
+                    return when (playPlan?.style) {
+                        LiveCourtPlayStyle.CUT -> if (index == 1) smooth((playProgress - 0.25f) / 0.55f) else smooth(playProgress)
+                        LiveCourtPlayStyle.PICK_AND_ROLL -> if (index == 4) smooth((playProgress - 0.22f) / 0.58f) else smooth(playProgress)
+                        LiveCourtPlayStyle.POST_UP -> if (index == 4) smooth((playProgress - 0.28f) / 0.48f) else smooth(playProgress)
+                        LiveCourtPlayStyle.MID_RANGE -> if (index == 2) smooth((playProgress - 0.24f) / 0.50f) else smooth(playProgress)
+                        LiveCourtPlayStyle.FREE_THROW -> smooth(playProgress * 2f)
+                        else -> smooth(playProgress)
+                    }
+                }
+
+                val offenseNormalized = baseOffense.mapIndexed { index, start ->
+                    val moved = lerp(start, targetOffense[index], stagedPlayerProgress(index))
+                    val movementScale = if (playPlan?.style == LiveCourtPlayStyle.FREE_THROW) 0f else 1f
+                    Offset(
+                        (moved.x + sin(phase + index * 0.9f) * 0.0045f * movementScale).coerceIn(0.10f, 0.91f),
+                        (moved.y + sin(phase * 1.15f + index * 1.2f) * 0.008f * movementScale).coerceIn(0.08f, 0.92f)
                     )
                 }
 
-                fun defensePoint(index: Int, attacksRight: Boolean): Offset {
-                    val baseX = floatArrayOf(0.55f, 0.61f, 0.66f, 0.72f, 0.68f)[index]
-                    val baseY = floatArrayOf(0.25f, 0.73f, 0.45f, 0.34f, 0.62f)[index]
-                    val dx = sin(phase + index * 1.07f + 0.7f) * 0.018f
-                    val dy = sin(phase * 1.2f + index * 0.93f + 0.5f) * 0.028f
-                    return Offset(
-                        w * mirroredX((baseX + dx).coerceIn(0.12f, 0.88f), attacksRight),
-                        h * (baseY + dy).coerceIn(0.10f, 0.90f)
+                val defenseNormalized = if (playPlan?.style == LiveCourtPlayStyle.FREE_THROW) {
+                    listOf(
+                        Offset(0.79f, 0.32f),
+                        Offset(0.79f, 0.68f),
+                        Offset(0.74f, 0.38f),
+                        Offset(0.74f, 0.62f),
+                        Offset(0.60f, 0.50f)
                     )
+                } else {
+                    offenseNormalized.mapIndexed { index, offense ->
+                        var x = (offense.x + 0.035f).coerceAtMost(0.90f)
+                        var y = (offense.y + if (index % 2 == 0) 0.018f else -0.018f).coerceIn(0.08f, 0.92f)
+                        val collapsing = playPlan?.style in setOf(
+                            LiveCourtPlayStyle.DRIVE,
+                            LiveCourtPlayStyle.CUT,
+                            LiveCourtPlayStyle.PICK_AND_ROLL,
+                            LiveCourtPlayStyle.POST_UP
+                        ) && playProgress > 0.52f && index < 3
+                        if (collapsing) {
+                            val collapse = smooth((playProgress - 0.52f) / 0.34f)
+                            val collapseTarget = Offset(0.84f, 0.41f + index * 0.09f)
+                            val collapsed = lerp(Offset(x, y), collapseTarget, collapse)
+                            x = collapsed.x
+                            y = collapsed.y
+                        }
+                        Offset(x, y)
+                    }
                 }
 
+                val offensePositions = offenseNormalized.map(::courtPoint)
+                val defensePositions = defenseNormalized.map(::courtPoint)
                 val offenseColor = if (offenseSide == LiveScoringSide.USER) BasketOrange else ElectricCyan
                 val defenseColor = if (offenseSide == LiveScoringSide.USER) ElectricCyan else BasketOrange
-                val offensePositions = List(5) { offensePoint(it, offenseAttacksRight) }
-                val defensePositions = List(5) { defensePoint(it, offenseAttacksRight) }
 
                 defensePositions.forEach { point ->
                     drawCircle(Color.Black.copy(alpha = 0.28f), markerRadius + 3f, point + Offset(2f, 3f))
@@ -219,28 +366,126 @@ fun LiveCourtAnimation(
                     )
                 }
 
-                val scoreAge = if (lastScoreElapsedMillis >= 0L && elapsedMillis >= lastScoreElapsedMillis) {
-                    elapsedMillis - lastScoreElapsedMillis
-                } else {
-                    Long.MAX_VALUE
+                fun bouncedAt(index: Int): Offset {
+                    val player = offensePositions[index]
+                    val bounce = sin(phase * 2.5f) * markerRadius * 0.45f
+                    return Offset(player.x + markerRadius * 1.15f, player.y + bounce)
                 }
-                val shotActive = lastScoreSide != null && scoreAge <= 900L
-                val ballPosition = if (shotActive) {
-                    val scorerAttacksRight = if (lastScoreSide == LiveScoringSide.USER) userAttacksRight else !userAttacksRight
-                    val shotStart = if (lastScoreSide == offenseSide) offensePositions.first() else {
-                        offensePoint(0, scorerAttacksRight)
+
+                fun pass(from: Int, to: Int, localProgress: Float): Offset =
+                    lerp(offensePositions[from], offensePositions[to], smooth(localProgress))
+
+                val hoop = if (offenseAttacksRight) rightHoop else leftHoop
+                val shooterIndex = when (playPlan?.style) {
+                    LiveCourtPlayStyle.FREE_THROW,
+                    LiveCourtPlayStyle.DRIVE,
+                    LiveCourtPlayStyle.TOP_THREE -> 0
+                    LiveCourtPlayStyle.CUT,
+                    LiveCourtPlayStyle.WING_THREE -> 1
+                    LiveCourtPlayStyle.MID_RANGE -> 2
+                    LiveCourtPlayStyle.CORNER_THREE -> 3
+                    LiveCourtPlayStyle.PICK_AND_ROLL,
+                    LiveCourtPlayStyle.POST_UP -> 4
+                    null -> 0
+                }
+
+                fun shot(localProgress: Float): Offset {
+                    val start = offensePositions[shooterIndex]
+                    val t = smooth(localProgress)
+                    val arcLift = sin(t * PI.toFloat()) * h * when (playPlan?.style) {
+                        LiveCourtPlayStyle.DRIVE,
+                        LiveCourtPlayStyle.CUT,
+                        LiveCourtPlayStyle.PICK_AND_ROLL,
+                        LiveCourtPlayStyle.POST_UP -> 0.075f
+                        LiveCourtPlayStyle.FREE_THROW,
+                        LiveCourtPlayStyle.MID_RANGE -> 0.12f
+                        else -> 0.16f
                     }
-                    val hoop = if (scorerAttacksRight) rightHoop else leftHoop
-                    val progress = (scoreAge.toFloat() / 900f).coerceIn(0f, 1f)
-                    val arcLift = sin(progress * PI.toFloat()) * h * 0.16f
-                    Offset(
-                        x = shotStart.x + (hoop.x - shotStart.x) * progress,
-                        y = shotStart.y + (hoop.y - shotStart.y) * progress - arcLift
+                    return Offset(
+                        x = start.x + (hoop.x - start.x) * t,
+                        y = start.y + (hoop.y - start.y) * t - arcLift
                     )
-                } else {
-                    val handler = offensePositions.first()
-                    val bounce = sin(phase * 2.2f) * markerRadius * 0.55f
-                    Offset(handler.x + markerRadius * 1.25f, handler.y + bounce)
+                }
+
+                val ballPosition = when (playPlan?.style) {
+                    LiveCourtPlayStyle.FREE_THROW -> when {
+                        playProgress < 0.72f -> offensePositions[0] + Offset(markerRadius * 0.9f, 0f)
+                        else -> shot((playProgress - 0.72f) / 0.28f)
+                    }
+                    LiveCourtPlayStyle.DRIVE -> if (playPlan.passCount == 0) {
+                        if (playProgress < 0.82f) bouncedAt(0) else shot((playProgress - 0.82f) / 0.18f)
+                    } else {
+                        when {
+                            playProgress < 0.18f -> bouncedAt(0)
+                            playProgress < 0.30f -> pass(0, 1, (playProgress - 0.18f) / 0.12f)
+                            playProgress < 0.42f -> bouncedAt(1)
+                            playProgress < 0.56f -> pass(1, 0, (playProgress - 0.42f) / 0.14f)
+                            playProgress < 0.82f -> bouncedAt(0)
+                            else -> shot((playProgress - 0.82f) / 0.18f)
+                        }
+                    }
+                    LiveCourtPlayStyle.CUT -> if (playPlan.passCount <= 1) {
+                        when {
+                            playProgress < 0.42f -> bouncedAt(0)
+                            playProgress < 0.64f -> pass(0, 1, (playProgress - 0.42f) / 0.22f)
+                            playProgress < 0.84f -> bouncedAt(1)
+                            else -> shot((playProgress - 0.84f) / 0.16f)
+                        }
+                    } else {
+                        when {
+                            playProgress < 0.24f -> bouncedAt(0)
+                            playProgress < 0.38f -> pass(0, 2, (playProgress - 0.24f) / 0.14f)
+                            playProgress < 0.55f -> bouncedAt(2)
+                            playProgress < 0.70f -> pass(2, 1, (playProgress - 0.55f) / 0.15f)
+                            playProgress < 0.84f -> bouncedAt(1)
+                            else -> shot((playProgress - 0.84f) / 0.16f)
+                        }
+                    }
+                    LiveCourtPlayStyle.PICK_AND_ROLL -> when {
+                        playProgress < 0.55f -> bouncedAt(0)
+                        playProgress < 0.72f -> pass(0, 4, (playProgress - 0.55f) / 0.17f)
+                        playProgress < 0.84f -> bouncedAt(4)
+                        else -> shot((playProgress - 0.84f) / 0.16f)
+                    }
+                    LiveCourtPlayStyle.POST_UP -> when {
+                        playProgress < 0.30f -> bouncedAt(0)
+                        playProgress < 0.48f -> pass(0, 4, (playProgress - 0.30f) / 0.18f)
+                        playProgress < 0.83f -> bouncedAt(4)
+                        else -> shot((playProgress - 0.83f) / 0.17f)
+                    }
+                    LiveCourtPlayStyle.MID_RANGE -> when {
+                        playProgress < 0.25f -> bouncedAt(0)
+                        playProgress < 0.40f -> pass(0, 1, (playProgress - 0.25f) / 0.15f)
+                        playProgress < 0.56f -> bouncedAt(1)
+                        playProgress < 0.70f -> pass(1, 2, (playProgress - 0.56f) / 0.14f)
+                        playProgress < 0.82f -> bouncedAt(2)
+                        else -> shot((playProgress - 0.82f) / 0.18f)
+                    }
+                    LiveCourtPlayStyle.CORNER_THREE -> when {
+                        playProgress < 0.20f -> bouncedAt(0)
+                        playProgress < 0.34f -> pass(0, 2, (playProgress - 0.20f) / 0.14f)
+                        playProgress < 0.50f -> bouncedAt(2)
+                        playProgress < 0.66f -> pass(2, 3, (playProgress - 0.50f) / 0.16f)
+                        playProgress < 0.81f -> bouncedAt(3)
+                        else -> shot((playProgress - 0.81f) / 0.19f)
+                    }
+                    LiveCourtPlayStyle.WING_THREE -> when {
+                        playProgress < 0.20f -> bouncedAt(0)
+                        playProgress < 0.34f -> pass(0, 2, (playProgress - 0.20f) / 0.14f)
+                        playProgress < 0.50f -> bouncedAt(2)
+                        playProgress < 0.66f -> pass(2, 1, (playProgress - 0.50f) / 0.16f)
+                        playProgress < 0.81f -> bouncedAt(1)
+                        else -> shot((playProgress - 0.81f) / 0.19f)
+                    }
+                    LiveCourtPlayStyle.TOP_THREE -> when {
+                        playProgress < 0.18f -> bouncedAt(0)
+                        playProgress < 0.32f -> pass(0, 1, (playProgress - 0.18f) / 0.14f)
+                        playProgress < 0.48f -> bouncedAt(1)
+                        playProgress < 0.64f -> pass(1, 0, (playProgress - 0.48f) / 0.16f)
+                        playProgress < 0.81f -> bouncedAt(0)
+                        else -> shot((playProgress - 0.81f) / 0.19f)
+                    }
+                    null -> bouncedAt(0)
                 }
 
                 drawCircle(Color.Black.copy(alpha = 0.30f), ballRadius + 2f, ballPosition + Offset(1.5f, 2f))
@@ -248,14 +493,19 @@ fun LiveCourtAnimation(
                 drawLine(Color(0xFF4A2412), ballPosition + Offset(-ballRadius, 0f), ballPosition + Offset(ballRadius, 0f), strokeWidth = 1.5f)
                 drawLine(Color(0xFF4A2412), ballPosition + Offset(0f, -ballRadius), ballPosition + Offset(0f, ballRadius), strokeWidth = 1.5f)
 
-                if (shotActive) {
+                val scoreAge = if (lastScoreElapsedMillis >= 0L && elapsedMillis >= lastScoreElapsedMillis) {
+                    elapsedMillis - lastScoreElapsedMillis
+                } else {
+                    Long.MAX_VALUE
+                }
+                if (lastScoreSide != null && scoreAge <= 450L) {
                     val scoringAttacksRight = if (lastScoreSide == LiveScoringSide.USER) userAttacksRight else !userAttacksRight
-                    val hoop = if (scoringAttacksRight) rightHoop else leftHoop
-                    val pulse = 1f + (1f - (scoreAge.toFloat() / 900f).coerceIn(0f, 1f)) * 0.9f
+                    val scoredHoop = if (scoringAttacksRight) rightHoop else leftHoop
+                    val pulse = 1f + (1f - (scoreAge.toFloat() / 450f).coerceIn(0f, 1f)) * 0.9f
                     drawCircle(
                         ChampionshipGold.copy(alpha = 0.8f),
                         markerRadius * 1.4f * pulse,
-                        hoop,
+                        scoredHoop,
                         style = Stroke(width = 4f)
                     )
                 }
@@ -289,13 +539,13 @@ fun LiveCourtAnimation(
             }
             Text(
                 text = if (lastScoreName == null || lastScorePoints <= 0) {
-                    "A posse está em movimento"
+                    playLabel
                 } else {
-                    "Último lance: +$lastScorePoints • $lastScoreName"
+                    "$playLabel • último +$lastScorePoints"
                 },
-                color = if (lastScoreName == null) TextMuted else ChampionshipGold,
+                color = if (playPlan == null) TextMuted else ChampionshipGold,
                 fontSize = 9.sp,
-                fontWeight = if (lastScoreName == null) FontWeight.Normal else FontWeight.Bold,
+                fontWeight = if (playPlan == null) FontWeight.Normal else FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
