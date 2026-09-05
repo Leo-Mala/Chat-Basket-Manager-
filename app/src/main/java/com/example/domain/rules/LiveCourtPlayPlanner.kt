@@ -97,7 +97,8 @@ object LiveCourtPlayPlanner {
     /**
      * Splits one already-scheduled scoring possession into presentation phases. Short possessions
      * deliberately use fewer visible passes instead of cramming several movements into a few
-     * frames. This affects animation only; the event time and score remain untouched.
+     * frames. If a play was planned with passes, at least one transfer remains visible so the ball
+     * never teleports to a cutter, roller, post player, or perimeter shooter.
      */
     fun flow(
         progress: Float,
@@ -129,15 +130,12 @@ object LiveCourtPlayPlanner {
             return ((value - start) / (end - start)).coerceIn(0f, 1f)
         }
 
-        val effectivePassCount = minOf(
-            plannedPassCount,
-            when {
-                possessionDurationMillis < 1_050L -> 0
-                possessionDurationMillis < 1_500L -> 1
-                possessionDurationMillis < 2_200L -> 2
-                else -> 3
-            }
-        )
+        val passCapacity = when {
+            possessionDurationMillis < 1_500L -> 1
+            possessionDurationMillis < 2_200L -> 2
+            else -> 3
+        }
+        val effectivePassCount = minOf(plannedPassCount, passCapacity)
 
         val phase = when {
             clamped < transitionEnd -> LiveCourtPossessionPhase.TRANSITION
