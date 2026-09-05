@@ -105,9 +105,9 @@ class LiveCourtPlayPlannerTest {
     }
 
     @Test
-    fun `short possessions reduce visible passes instead of cramming animation`() {
+    fun `short possessions reduce extra visible passes without teleporting ball`() {
         assertEquals(
-            0,
+            1,
             LiveCourtPlayPlanner.flow(
                 progress = 0.50f,
                 possessionDurationMillis = 900L,
@@ -136,6 +136,14 @@ class LiveCourtPlayPlannerTest {
                 progress = 0.50f,
                 possessionDurationMillis = 2_500L,
                 plannedPassCount = 3
+            ).effectivePassCount
+        )
+        assertEquals(
+            0,
+            LiveCourtPlayPlanner.flow(
+                progress = 0.50f,
+                possessionDurationMillis = 900L,
+                plannedPassCount = 0
             ).effectivePassCount
         )
     }
