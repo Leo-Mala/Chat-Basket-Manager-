@@ -2,6 +2,7 @@ package com.example
 
 import com.example.domain.rules.LiveCourtPlayPlanner
 import com.example.domain.rules.LiveCourtPlayStyle
+import com.example.domain.rules.LiveCourtPossessionPhase
 import com.example.domain.rules.LiveScoringSide
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -80,5 +81,74 @@ class LiveCourtPlayPlannerTest {
         )
 
         assertEquals(first, second)
+    }
+
+    @Test
+    fun `possession flow progresses through transition setup action and finish`() {
+        val duration = 2_400L
+        assertEquals(
+            LiveCourtPossessionPhase.TRANSITION,
+            LiveCourtPlayPlanner.flow(0.10f, duration, 3).phase
+        )
+        assertEquals(
+            LiveCourtPossessionPhase.SETUP,
+            LiveCourtPlayPlanner.flow(0.30f, duration, 3).phase
+        )
+        assertEquals(
+            LiveCourtPossessionPhase.ACTION,
+            LiveCourtPlayPlanner.flow(0.60f, duration, 3).phase
+        )
+        assertEquals(
+            LiveCourtPossessionPhase.FINISH,
+            LiveCourtPlayPlanner.flow(0.90f, duration, 3).phase
+        )
+    }
+
+    @Test
+    fun `short possessions reduce visible passes instead of cramming animation`() {
+        assertEquals(
+            0,
+            LiveCourtPlayPlanner.flow(
+                progress = 0.50f,
+                possessionDurationMillis = 900L,
+                plannedPassCount = 3
+            ).effectivePassCount
+        )
+        assertEquals(
+            1,
+            LiveCourtPlayPlanner.flow(
+                progress = 0.50f,
+                possessionDurationMillis = 1_300L,
+                plannedPassCount = 3
+            ).effectivePassCount
+        )
+        assertEquals(
+            2,
+            LiveCourtPlayPlanner.flow(
+                progress = 0.50f,
+                possessionDurationMillis = 1_900L,
+                plannedPassCount = 3
+            ).effectivePassCount
+        )
+        assertEquals(
+            3,
+            LiveCourtPlayPlanner.flow(
+                progress = 0.50f,
+                possessionDurationMillis = 2_500L,
+                plannedPassCount = 3
+            ).effectivePassCount
+        )
+    }
+
+    @Test
+    fun `flow progress is clamped and monotonic inside each phase`() {
+        val before = LiveCourtPlayPlanner.flow(-1f, 2_000L, 2)
+        val middle = LiveCourtPlayPlanner.flow(0.55f, 2_000L, 2)
+        val after = LiveCourtPlayPlanner.flow(2f, 2_000L, 2)
+
+        assertEquals(0f, before.transitionProgress)
+        assertTrue(middle.actionProgress in 0f..1f)
+        assertEquals(1f, after.finishProgress)
+        assertEquals(1f, after.sequenceProgress)
     }
 }
