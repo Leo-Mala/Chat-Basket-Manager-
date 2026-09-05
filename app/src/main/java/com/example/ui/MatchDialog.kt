@@ -193,11 +193,7 @@ fun PartidaDialog(
         quarterClock = "00:00"
 
         val simulator = GameSimulator(context.applicationContext, viewModel.simulationConfig())
-        val baseResult = try {
-            simulator.simulate(homeTeam, awayTeam)
-        } finally {
-            simulator.release()
-        }
+        val baseResult = simulator.simulate(homeTeam, awayTeam)
 
         val finalUserScore = LiveMatchRules.scoreFromQuarters(qUserScores)
         val finalOpponentScore = LiveMatchRules.scoreFromQuarters(qOppScores)
