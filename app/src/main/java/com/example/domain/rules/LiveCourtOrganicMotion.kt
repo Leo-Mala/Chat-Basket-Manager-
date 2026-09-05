@@ -9,11 +9,38 @@ data class LiveCourtMotionSample(
     val reactionProgress: Float
 )
 
+data class LiveCourtFormationBias(
+    val xOffset: Float,
+    val yOffset: Float
+)
+
 /**
  * Produces deterministic, player-specific motion so the five markers do not move as one rigid
  * block. These values are visual only and never alter score, possession, tactics or saved state.
  */
 object LiveCourtOrganicMotion {
+    /**
+     * Small deterministic spacing bias for each marker. It breaks overly geometric lines/arcs
+     * without changing the intended play location or any basketball rule/state.
+     */
+    fun formationBias(
+        playerIndex: Int,
+        eventElapsedMillis: Long,
+        formationSalt: Long = 0L
+    ): LiveCourtFormationBias {
+        require(playerIndex in 0..4) { "playerIndex must be between 0 and 4" }
+        require(eventElapsedMillis >= 0L) { "eventElapsedMillis must be non-negative" }
+
+        val seed = (eventElapsedMillis * 31L + playerIndex * 997L + formationSalt * 131L) and Long.MAX_VALUE
+        val xBucket = (seed % 17L).toInt() - 8
+        val yBucket = ((seed / 17L) % 21L).toInt() - 10
+
+        return LiveCourtFormationBias(
+            xOffset = xBucket * 0.00095f,
+            yOffset = yBucket * 0.00145f
+        )
+    }
+
     fun playerSample(
         playerIndex: Int,
         elapsedMillis: Long,
@@ -30,9 +57,16 @@ object LiveCourtOrganicMotion {
         val phase = playerIndex * 1.13f + ((seed % 19L).toFloat() * 0.17f)
         val seconds = elapsedMillis / 1_000f
         val activity = 0.45f + 0.55f * clampedAction
+        val spacing = formationBias(
+            playerIndex = playerIndex,
+            eventElapsedMillis = eventElapsedMillis,
+            formationSalt = 31L
+        )
 
-        val xOffset = sin(seconds * cadence + phase) * (0.0028f + playerIndex * 0.00022f) * activity
-        val yOffset = sin(seconds * (cadence * 1.27f) + phase * 0.73f) *
+        val xOffset = spacing.xOffset +
+            sin(seconds * cadence + phase) * (0.0028f + playerIndex * 0.00022f) * activity
+        val yOffset = spacing.yOffset +
+            sin(seconds * (cadence * 1.27f) + phase * 0.73f) *
             (0.0052f + (4 - playerIndex) * 0.00031f) * activity
 
         return LiveCourtMotionSample(
